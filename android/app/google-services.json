@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "391391461464",
+    "project_id": "com-grradio-app",
+    "storage_bucket": "com-grradio-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:391391461464:android:2e981287668a5aba760a2d",
+        "android_client_info": {
+          "package_name": "com.radio.grradio"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyABciFDPaOWf7k0pkrR2GQpfiujIPgw0fQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

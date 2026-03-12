@@ -1,0 +1,113 @@
+name: grradio
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shimmer: ^3.0.0  # Add this line
+  hive: ^2.2.3     # Ensure other packages are also here
+  hive_flutter: ^1.1.0
+  google_mobile_ads: ^6.0.0 # Use the latest stable version
+  audio_service: ^0.18.12
+  just_audio: ^0.10.5
+  audio_session: ^0.1.20
+  just_audio_background: ^0.0.1-beta.17
+  http: ^1.2.0
+  mongo_dart: ^0.9.1
+  # Downgraded to more stable version
+  on_audio_query: ^2.6.0
+  permission_handler: ^11.3.0
+  path_provider: ^2.1.2 # To find the file path
+  dio: ^5.4.0 # Or the latest version
+  share_plus: ^12.0.1
+  cupertino_icons: ^1.0.2
+  intl: ^0.20.2 # Or the latest stable version
+  xml: ^6.4.2  # Add this line
+  html: ^0.15.1  # Add this line for HTML parsing
+  rxdart: ^0.27.7
+  flutter_native_splash: ^2.4.7
+  flutter_launcher_icons: ^0.14.4
+  device_info_plus: ^11.0.0
+  flutter_bootstrap: ^2.0.0
+  provider: ^6.1.2
+  url_launcher: ^6.2.5
+  purchases_flutter: ^9.10.2
+  flutter_secure_storage: ^9.2.2
+  encrypt: ^5.0.3
+  shared_preferences: ^2.3.2
+  in_app_review: ^2.0.9
+  firebase_core: ^3.10.1
+  firebase_messaging: ^15.2.1
+  flutter_local_notifications: ^18.0.1
+  purchases_ui_flutter: ^9.10.2
+
+#  album_art_plugin:
+#    git:
+#      url: https://github.com/govardhanaraos/album_art_plugin.git
+#      path: album_art_plugin
+
+
+# pubspec.yaml
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.6
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/icons/
+
+flutter_native_splash:
+  # Color of the background
+  color: "#FFFFFF" # Use a color that matches your app's theme (e.g., white)
+
+  # 💡 CRITICAL: Define the path to your large logo image
+  image: assets/images/gr_radio_splash.png
+
+  # OPTIONAL: Set a maximum size for the image (as a fraction of the screen)
+  # Recommended for a big logo
+  image_android: assets/images/gr_radio_splash.png
+  image_ios: assets/images/gr_radio_splash.png
+
+  # Android Specific (controls size):
+  # Set this to true to cover the entire screen (usually for background images)
+  # or false to center the image with padding (best for logos).
+  android_12:
+    color: "#FFFFFF"
+    icon_background_color: "#FFFFFF"
+    image: assets/images/gr_radio_splash.png
+
+  android: true
+  ios: true
+  web: false
+  fullscreen: true
+
+  # iOS Specific (controls size):
+  # You can control the positioning on iOS using the 'branding' image or similar
+  # properties if needed, but the main 'image' setting usually scales appropriately.
+
+# pubspec.yaml (at the very bottom)
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+
+  # 💡 Path to your logo image (use a PNG with transparent background if possible)
+  image_path: "assets/icons/gr_radio_launcher_icon.png"
+
+  # Configuration for Android Adaptive Icons:
+  adaptive_icon_background: "#FFFFFF" # Use a solid color (e.g., white) or a path to a background image
+  adaptive_icon_foreground: "assets/icons/gr_radio_launcher_icon.png" # Path to your logo
+  remove_alpha_ios: true
