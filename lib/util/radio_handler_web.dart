@@ -28,7 +28,7 @@ class RadioHandlerImpl implements RadioHandlerBase {
   web.HTMLVideoElement? _video;
   Hls? _hls;
   bool _isRecording = false;
-  final List<RadioStation> _radioStations;
+  List<RadioStation> _radioStations;
 
   final _currentStationController = StreamController<RadioStation?>.broadcast();
   Stream<RadioStation?> get currentStationStream =>
@@ -42,6 +42,12 @@ class RadioHandlerImpl implements RadioHandlerBase {
   // Expose mediaItem so UI can listen for updates
   final ValueNotifier<MediaItem?> mediaItem = ValueNotifier<MediaItem?>(null);
   final ValueNotifier<bool> isPlaying = ValueNotifier<bool>(false);
+
+  @override
+  void setStations(List<RadioStation> stations) {
+    _radioStations = List.from(stations);
+    print("📻 RadioHandler (Web) updated with ${stations.length} stations");
+  }
 
   @override
   Future<void> playStation(RadioStation station) async {
@@ -117,6 +123,18 @@ class RadioHandlerImpl implements RadioHandlerBase {
   Future<void> resume() async {
     await _video?.playFuture();
     isPlaying.value = true;
+  }
+
+  @override
+  Future<void> cycleRepeatMode() {
+    // TODO: implement cycleRepeatMode
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<void> toggleShuffle() {
+    // TODO: implement toggleShuffle
+    throw UnimplementedError();
   }
 }
 

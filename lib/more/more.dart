@@ -2,10 +2,11 @@
 import 'package:flutter/material.dart';
 import 'package:grradio/more/about_screen.dart';
 import 'package:grradio/more/helpandsupport.dart';
-import 'package:grradio/more/premium/premium_activation_screen.dart';
+import 'package:grradio/more/notification_settings_screen.dart'; // Ensure path is correct
 import 'package:grradio/more/theme_provider.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:provider/provider.dart';
+import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 class MoreScreen extends StatelessWidget {
@@ -42,6 +43,8 @@ class MoreScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
@@ -52,18 +55,30 @@ class MoreScreen extends StatelessWidget {
             color: Colors.blueGrey.shade800,
           ),
         ),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                Color(0xFFF57C00), // Dark Orange
-                Color(0xFFFFB74D), // Light Orange
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
+        flexibleSpace: themeProvider.isDarkMode
+            ? Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Color(0xFF121212), // Dark Background
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+              )
+            : Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Color(0xFF7C4DFF), // Primary Blue for Radio tab
+                      Color(0xFF448AFF), // Light Blue
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+              ),
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
@@ -153,19 +168,36 @@ class MoreScreen extends StatelessWidget {
               title: 'Go Premium (Ad-Free)',
               subtitle: 'Get Premium subscription',
               color: Colors.amber,
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => PremiumActivationScreen()),
-                );
+              onTap: () async {
+                // This displays the Paywall you designed in the RevenueCat Dashboard
+                final paywallResult = await RevenueCatUI.presentPaywall();
+
+                // Optional: You can check the result if needed
+                if (paywallResult == PaywallResult.purchased) {
+                  debugPrint("Purchase successful!");
+                }
               },
+
+              // onTap: () {
+              //   Navigator.push(
+              //     context,
+              //     MaterialPageRoute(builder: (_) => PremiumActivationScreen()),
+              //   );
+              // },
             ),
             _buildSettingsItem(
               icon: Icons.notifications,
               title: 'Notifications',
               subtitle: 'Manage your notification preferences',
               color: Theme.of(context).textTheme.bodyLarge!.color!,
-              onTap: () {},
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const NotificationSettingsScreen(),
+                  ),
+                );
+              },
             ),
 
             _buildSettingsItem(

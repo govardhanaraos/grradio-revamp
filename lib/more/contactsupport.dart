@@ -9,7 +9,7 @@ class ContactSupportScreen extends StatelessWidget {
   Future<void> _launchEmail() async {
     final Uri emailUri = Uri(
       scheme: 'mailto',
-      path: "grradio-support@gmail.com",
+      path: "grradio.customercare@gmail.com",
       query: "subject=GR Radio Support Request",
     );
 
@@ -21,10 +21,7 @@ class ContactSupportScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text("Contact Support"),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: Text("Contact Support"), centerTitle: true),
       body: Center(
         child: Card(
           elevation: 4,
@@ -37,15 +34,15 @@ class ContactSupportScreen extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.support_agent,
-                    size: 60, color: Colors.orange.shade700),
+                Icon(
+                  Icons.support_agent,
+                  size: 60,
+                  color: Colors.orange.shade700,
+                ),
                 SizedBox(height: 16),
                 Text(
                   "Need Help?",
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
                 SizedBox(height: 10),
                 Text(

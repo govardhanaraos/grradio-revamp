@@ -1,11 +1,11 @@
 import 'dart:convert';
 
+import 'package:grradio/Env.dart';
 import 'package:grradio/more/premium/securityservice.dart';
 import 'package:http/http.dart' as http;
 
 class LicenseService {
-  static const String baseUrl =
-      "https://radio-backend-nysq.onrender.com/premium";
+  static final String baseUrl = "${Env.apiBaseUrl}/premium";
 
   /// Verifies a new key and links the device
   static Future<Map<String, dynamic>> verifyLicense(

@@ -3,25 +3,30 @@ import 'dart:math';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
-import 'package:grradio/ads/banner_ad_widget.dart';
+import 'package:flutter/services.dart';
+import 'package:grradio/ads/ad_config_provider.dart';
+import 'package:grradio/ads/ad_widgets.dart';
 import 'package:grradio/api/analytics_service_api.dart';
 import 'package:grradio/main.dart';
-import 'package:grradio/util/track_meta_data_service.dart';
-import 'package:intl/intl.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:on_audio_query/on_audio_query.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-// 💡 Simple model for local recording files (not indexed by MediaStore)
+// ─────────────────────────────────────────────────────────────────────────────
+//  Models
+// ─────────────────────────────────────────────────────────────────────────────
+
 class RecordingFile {
-  final int id;
+  final String id;
   final String title;
   final String path;
-  final int fileSizeInBytes; // Size in bytes
-  final DateTime dateCreated; // Date Created
-  final Duration duration; // Duration
+  final int fileSizeInBytes;
+  final DateTime dateCreated;
+  final Duration duration;
 
   RecordingFile({
     required this.id,
@@ -33,7 +38,6 @@ class RecordingFile {
   });
 }
 
-// 💡 Model for downloaded MP3 files from Music folder
 class DownloadedMp3File {
   final int id;
   final String title;
@@ -54,7 +58,66 @@ class DownloadedMp3File {
   });
 }
 
-// 💡 Beautiful MP3 Player Screen - Fully Responsive
+// ─────────────────────────────────────────────────────────────────────────────
+//  Sort options
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum SortOption {
+  nameAsc,
+  nameDesc,
+  dateNewest,
+  dateOldest,
+  durationLong,
+  sizeLarge,
+}
+
+extension SortOptionLabel on SortOption {
+  String get label {
+    switch (this) {
+      case SortOption.nameAsc:
+        return 'Name (A to Z)';
+      case SortOption.nameDesc:
+        return 'Name (Z to A)';
+      case SortOption.dateNewest:
+        return 'Date (newest first)';
+      case SortOption.dateOldest:
+        return 'Date (oldest first)';
+      case SortOption.durationLong:
+        return 'Duration (longest)';
+      case SortOption.sizeLarge:
+        return 'Size (largest)';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case SortOption.nameAsc:
+      case SortOption.nameDesc:
+        return Icons.sort_by_alpha_rounded;
+      case SortOption.dateNewest:
+      case SortOption.dateOldest:
+        return Icons.calendar_today_rounded;
+      case SortOption.durationLong:
+        return Icons.timer_outlined;
+      case SortOption.sizeLarge:
+        return Icons.storage_outlined;
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Date group header sentinel
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DateHeader {
+  final String label;
+  const _DateHeader(this.label);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Mp3PlayerScreen
+// ─────────────────────────────────────────────────────────────────────────────
+
 class Mp3PlayerScreen extends StatefulWidget {
   final int initialTabIndex;
   const Mp3PlayerScreen({Key? key, this.initialTabIndex = 0}) : super(key: key);
@@ -66,79 +129,178 @@ class Mp3PlayerScreen extends StatefulWidget {
 class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
     with TickerProviderStateMixin {
   final OnAudioQuery _audioQuery = OnAudioQuery();
-  late AudioPlayer _mp3Player;
   final AnalyticsServiceAPI _analyticsService = AnalyticsServiceAPI();
+
   late TabController _tabController;
   bool _hasPermission = false;
   bool _isCheckingPermission = true;
-  SongModel? _currentSong;
+
   List<SongModel>? _songs;
-  List<DownloadedMp3File>? _downloadedMp3s; // New list for downloaded MP3s
-  int _currentIndex = -1;
-  LoopMode _loopMode = LoopMode.off;
-
-  bool _isPlayerExpanded = false;
-  String? _recordingsPath;
-
+  List<DownloadedMp3File>? _downloadedMp3s;
   List<RecordingFile>? _recordings;
-  bool _isCurrentListRecordings = false;
-  bool _isCurrentListDownloadedMp3s =
-      false; // Track if current song is from downloaded MP3s
+
+  // ── Scroll controllers (one per tab) ─────────────────────────────────────
+  final List<ScrollController> _scrollControllers = [
+    ScrollController(),
+    ScrollController(),
+    ScrollController(),
+  ];
+  bool _showScrollTop = false;
+
+  // ── Per-tab search ────────────────────────────────────────────────────────
+  final List<TextEditingController> _searchControllers = [
+    TextEditingController(),
+    TextEditingController(),
+    TextEditingController(),
+  ];
+  final List<String> _searchQueries = ['', '', ''];
+  bool _searchVisible = false;
+
+  // ── Sort (persisted per tab) ──────────────────────────────────────────────
+  static const _sortPrefKeys = [
+    'sort_music',
+    'sort_downloads',
+    'sort_recordings',
+  ];
+  final List<SortOption> _sortOptions = [
+    SortOption.nameAsc,
+    SortOption.dateNewest,
+    SortOption.dateNewest,
+  ];
+
+  // ── Multi-select ──────────────────────────────────────────────────────────
+  final Set<String> _selectedIds = {};
+  bool _isSelecting = false;
+
+  // ── Ad state — snapshotted once in didChangeDependencies ──────────────────
+  // Same pattern as RadioPlayerScreen: cache flags so build() never calls
+  // context.watch<AdConfigProvider>() which causes spurious rebuilds.
+  bool _showBanner = false;
+  bool _showInterstitial = false;
+  int _interstitialEvery = 5;
+  int _tapCount = 0;
+  InListPlacement _mp3ListPlacement = const InListPlacement();
+  InListPlacement _downloadsListPlacement = const InListPlacement();
+  InListPlacement _recordingsListPlacement = const InListPlacement();
+  bool _adConfigLoaded = false;
 
   @override
   void initState() {
     super.initState();
-    _mp3Player = globalMp3Player;
     _tabController = TabController(
-      length: 3, // Updated: Added third tab for Downloaded MP3s
+      length: 3,
       vsync: this,
       initialIndex: widget.initialTabIndex,
     );
+    _tabController.addListener(() {
+      if (mounted)
+        setState(() {
+          _searchVisible = false;
+          _isSelecting = false;
+          _selectedIds.clear();
+        });
+    });
+    for (final sc in _scrollControllers) sc.addListener(_onScrollChanged);
+    for (int i = 0; i < 3; i++) {
+      final idx = i;
+      _searchControllers[idx].addListener(() {
+        if (mounted)
+          setState(() => _searchQueries[idx] = _searchControllers[idx].text);
+      });
+    }
+    _init();
 
-    _checkAndRequestPermissions();
-    _setupPlayerListeners();
-    _loadLocalRecordings();
+    // Snapshot ad config as soon as AdConfigProvider is ready.
+    // We use a postFrameCallback so context is available, then either read
+    // immediately (if already initialised) or attach a one-shot listener that
+    // fires when initialize() completes and calls notifyListeners().
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final adConfig = context.read<AdConfigProvider>();
+      if (adConfig.initialized) {
+        _snapshotAdConfig(adConfig);
+      } else {
+        late void Function() listener;
+        listener = () {
+          if (!mounted) return;
+          _snapshotAdConfig(adConfig);
+          adConfig.removeListener(listener);
+        };
+        adConfig.addListener(listener);
+      }
+    });
+  }
+
+  /// Reads all ad flags and placements from [adConfig] into local state and
+  /// calls setState so the lists rebuild with ads inserted.
+  void _snapshotAdConfig(AdConfigProvider adConfig) {
+    if (!mounted) return;
+    setState(() {
+      _adConfigLoaded = true;
+      _showBanner = adConfig.isBannerEnabled(AdScreen.player);
+      _showInterstitial = adConfig.isInterstitialEnabled(AdScreen.player);
+      _interstitialEvery = adConfig.interstitialEveryNTaps(AdScreen.player);
+      _mp3ListPlacement = adConfig.mp3ListPlacement(AdScreen.player);
+      _downloadsListPlacement = adConfig.downloadsListPlacement(
+        AdScreen.player,
+      );
+      _recordingsListPlacement = adConfig.recordingsListPlacement(
+        AdScreen.player,
+      );
+    });
+    if (_showInterstitial) InterstitialAdManager.preload();
+  }
+
+  Future<void> _init() async {
+    await _loadSortPrefs();
+    await _checkAndRequestPermissions();
+  }
+
+  Future<void> _loadSortPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    for (int i = 0; i < 3; i++) {
+      final idx = prefs.getInt(_sortPrefKeys[i]);
+      if (idx != null && idx < SortOption.values.length) {
+        _sortOptions[i] = SortOption.values[idx];
+      }
+    }
+  }
+
+  Future<void> _saveSortPref(int tab) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_sortPrefKeys[tab], _sortOptions[tab].index);
+  }
+
+  void _onScrollChanged() {
+    final show = _scrollControllers.any(
+      (sc) => sc.hasClients && sc.offset > 300,
+    );
+    if (show != _showScrollTop) setState(() => _showScrollTop = show);
+  }
+
+  void _scrollToTop() {
+    HapticFeedback.lightImpact();
+    final sc = _scrollControllers[_tabController.index];
+    if (sc.hasClients)
+      sc.animateTo(
+        0,
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeOutCubic,
+      );
   }
 
   String _formatBytes(int bytes, int decimals) {
-    if (bytes <= 0) return "0 B";
-    const suffixes = ["B", "KB", "MB", "GB", "TB"];
-    var i = (log(bytes) / log(1024)).floor();
-    return ((bytes / pow(1024, i)).toStringAsFixed(decimals)) +
-        ' ' +
-        suffixes[i];
+    if (bytes <= 0) return '0 B';
+    const s = ['B', 'KB', 'MB', 'GB'];
+    final i = (log(bytes) / log(1024)).floor();
+    return '${(bytes / pow(1024, i)).toStringAsFixed(decimals)} ${s[i]}';
   }
 
   String _formatDuration(Duration d) {
-    String twoDigits(int n) => n.toString().padLeft(2, "0");
-    String twoDigitMinutes = twoDigits(d.inMinutes.remainder(60));
-    String twoDigitSeconds = twoDigits(d.inSeconds.remainder(60));
-    return "${twoDigits(d.inHours)}:$twoDigitMinutes:$twoDigitSeconds";
-  }
-
-  void _setupPlayerListeners() {
-    _mp3Player.playerStateStream.listen((state) {
-      if (state.processingState == ProcessingState.completed) {
-        if (_isCurrentListRecordings || _isCurrentListDownloadedMp3s) {
-          // When a recording or downloaded MP3 finishes, stop and reset
-          _mp3Player.stop();
-          if (mounted) {
-            setState(() {
-              if (_currentSong != null) {
-                _currentSong = null;
-                _currentIndex = -1;
-              }
-            });
-          }
-        }
-
-        if (_loopMode == LoopMode.off &&
-            !_isCurrentListRecordings &&
-            !_isCurrentListDownloadedMp3s) {
-          _playNext();
-        }
-      }
-    });
+    String two(int n) => n.toString().padLeft(2, '0');
+    if (d.inHours > 0)
+      return '${two(d.inHours)}:${two(d.inMinutes.remainder(60))}:${two(d.inSeconds.remainder(60))}';
+    return '${two(d.inMinutes)}:${two(d.inSeconds.remainder(60))}';
   }
 
   @override
@@ -152,44 +314,54 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
   @override
   void dispose() {
     _tabController.dispose();
+    for (final sc in _scrollControllers) {
+      sc.removeListener(_onScrollChanged);
+      sc.dispose();
+    }
+    for (final tc in _searchControllers) tc.dispose();
     super.dispose();
   }
 
+  // ── Permissions ───────────────────────────────────────────────────────────
+
   Future<void> _checkAndRequestPermissions() async {
-    setState(() {
-      _isCheckingPermission = true;
-    });
-
-    bool permissionGranted = false;
-
+    setState(() => _isCheckingPermission = true);
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('audio_permission_granted') ?? false) {
+      setState(() {
+        _hasPermission = true;
+        _isCheckingPermission = false;
+      });
+      _loadSongs();
+      return;
+    }
+    bool granted = false;
     if (await Permission.audio.isGranted) {
-      permissionGranted = true;
+      granted = true;
     } else {
-      final audioStatus = await Permission.audio.request();
-      if (audioStatus.isGranted) {
-        permissionGranted = true;
+      final s = await Permission.audio.request();
+      if (s.isGranted) {
+        granted = true;
       } else {
-        final storageStatus = await Permission.storage.request();
-        if (storageStatus.isGranted) {
-          permissionGranted = true;
-        }
+        if ((await Permission.storage.request()).isGranted) granted = true;
       }
     }
-
+    if (granted) await prefs.setBool('audio_permission_granted', true);
     setState(() {
-      _hasPermission = permissionGranted;
+      _hasPermission = granted;
       _isCheckingPermission = false;
     });
-
-    if (permissionGranted) {
-      _loadSongs();
-    }
+    if (granted) _loadSongs();
   }
 
+  // ── Data loading (parallel) ───────────────────────────────────────────────
+
   Future<void> _loadSongs() async {
-    await _loadAllSongs();
-    await _loadLocalRecordings();
-    await _loadDownloadedMp3s(); // Load downloaded MP3s
+    await Future.wait([
+      _loadAllSongs(),
+      _loadLocalRecordings(),
+      _loadDownloadedMp3s(),
+    ]);
   }
 
   Future<void> _loadAllSongs() async {
@@ -200,1706 +372,1698 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
         uriType: UriType.EXTERNAL,
         ignoreCase: true,
       );
-
-      if (mounted) {
-        setState(() {
-          _songs = songs;
-        });
-      }
+      if (mounted) setState(() => _songs = songs);
     } catch (e) {
-      print("Error loading songs: $e");
-      _analyticsService.logActivity(deviceId!, "Error loading songs: $e");
-      if (mounted) {
-        setState(() {
-          _songs = [];
-        });
-      }
+      _analyticsService.logActivity(deviceId!, 'Error loading songs: $e');
+      if (mounted) setState(() => _songs = []);
     }
   }
 
-  // 💡 NEW: Load downloaded MP3s from Music folder
   Future<void> _loadDownloadedMp3s() async {
     try {
-      // Get app documents directory
       final appDir = await getApplicationDocumentsDirectory();
       final musicDir = Directory('${appDir.path}/Music');
-
-      // Create Music directory if it doesn't exist
       if (!await musicDir.exists()) {
         await musicDir.create(recursive: true);
+        if (mounted) setState(() => _downloadedMp3s = []);
+        return;
       }
-
-      final tempPlayer = AudioPlayer();
-      final List<DownloadedMp3File> loadedMp3s = [];
-      int idCounter = 0;
-
-      // List all files in Music directory
-      final files = musicDir.listSync().where((f) {
-        final path = f.path.toLowerCase();
-        return path.endsWith('.mp3') ||
-            path.endsWith('.aac') ||
-            path.endsWith('.m4a');
-      }).toList();
-
-      for (final fileSystemEntity in files) {
-        if (fileSystemEntity is File) {
-          final File file = fileSystemEntity;
-          final stat = file.statSync();
-          final fileSize = stat.size;
-          final dateCreated = stat.changed;
-
-          // Extract filename without extension
-          String fileName = file.uri.pathSegments.last;
-          String title = fileName;
-          if (fileName.contains('.')) {
-            title = fileName.substring(0, fileName.lastIndexOf('.'));
-          }
-
-          final metadata = await TrackMetadataService.getTrackMetadata(
-            file.path,
-          );
-
-          title = metadata?.title ?? title;
-          String? artist = metadata?.artist;
-
-          // Get duration
-          Duration duration = Duration.zero;
-          try {
-            final result = await tempPlayer.setFilePath(file.path);
-            duration = result ?? Duration.zero;
-          } catch (e) {
-            print("Could not get duration for ${file.path}: $e");
-            _analyticsService.logActivity(
-              deviceId!,
-              "Could not get duration for ${file.path}: $e",
-            );
-          }
-
-          loadedMp3s.add(
+      final List<DownloadedMp3File> temp = [];
+      for (var f in musicDir.listSync()) {
+        if (f is File && (f.path.endsWith('.mp3') || f.path.endsWith('.m4a'))) {
+          final stat = f.statSync();
+          temp.add(
             DownloadedMp3File(
-              id: idCounter++,
-              title: title,
-              path: file.path,
-              fileSizeInBytes: fileSize,
-              dateCreated: dateCreated,
-              duration: duration,
-              artist: artist,
+              id: f.hashCode,
+              title: f.path.split('/').last,
+              path: f.path,
+              fileSizeInBytes: stat.size,
+              dateCreated: stat.changed,
+              duration: Duration.zero,
             ),
           );
         }
       }
-
-      // Sort by date created (newest first)
-      loadedMp3s.sort((a, b) => b.dateCreated.compareTo(a.dateCreated));
-
-      if (mounted) {
-        setState(() {
-          _downloadedMp3s = loadedMp3s;
-        });
-      }
-
-      await tempPlayer.dispose();
+      if (mounted) setState(() => _downloadedMp3s = temp);
     } catch (e) {
-      print('Error loading downloaded MP3s: $e');
-      _analyticsService.logActivity(
-        deviceId!,
-        "Error loading downloaded MP3s: $e",
-      );
-      if (mounted) {
-        setState(() {
-          _downloadedMp3s = [];
-        });
-      }
+      print('Error loading downloads: $e');
     }
   }
 
   Future<void> _loadLocalRecordings() async {
-    Directory? directory;
-    final externalDirectories = await getExternalStorageDirectories(
+    final dirs = <Directory>[];
+    final ext = await getExternalStorageDirectories(
       type: StorageDirectory.downloads,
     );
-
-    if (externalDirectories != null && externalDirectories.isNotEmpty) {
-      directory = externalDirectories.first;
-    } else {
-      directory = await getApplicationDocumentsDirectory();
-    }
-
-    if (directory == null) {
-      setState(() {
-        _recordings = [];
-      });
+    if (ext != null) dirs.addAll(ext);
+    final docs = await getApplicationDocumentsDirectory();
+    if (!dirs.any((d) => d.path == docs.path)) dirs.add(docs);
+    if (dirs.isEmpty) {
+      if (mounted) setState(() => _recordings = []);
       return;
     }
 
-    final tempPlayer = AudioPlayer();
-    final List<RecordingFile> loadedRecordings = [];
-    int idCounter = 0;
-
+    final player = AudioPlayer();
+    final List<RecordingFile> loaded = [];
+    final Set<String> seen = {};
     try {
-      final files = directory
-          .listSync()
-          .where(
-            (f) =>
-                f.path.toLowerCase().endsWith('.aac') ||
-                f.path.toLowerCase().endsWith('.mp3') ||
-                f.path.toLowerCase().endsWith('.m4a') ||
-                f.path.toLowerCase().endsWith('.ts'),
-          )
-          .toList();
-
-      for (final fileSystemEntity in files) {
-        if (fileSystemEntity is File) {
-          final File file = fileSystemEntity;
-          final stat = file.statSync();
-          final fileSize = stat.size;
-          final dateCreated = stat.changed;
-
-          Duration duration = Duration.zero;
+      for (final dir in dirs) {
+        if (!dir.existsSync()) continue;
+        for (final entity in dir.listSync().where(
+          (f) =>
+              f.path.toLowerCase().endsWith('.aac') ||
+              f.path.toLowerCase().endsWith('.mp3') ||
+              f.path.toLowerCase().endsWith('.m4a') ||
+              f.path.toLowerCase().endsWith('.ts'),
+        )) {
+          if (entity is! File || !seen.add(entity.path)) continue;
+          final stat = entity.statSync();
+          if (stat.size == 0) continue;
+          Duration dur = Duration.zero;
           try {
-            final result = await tempPlayer.setFilePath(file.path);
-            duration = result ?? Duration.zero;
-          } catch (e) {
-            print("Error loading downloaded MP3s: $e");
-            _analyticsService.logActivity(
-              deviceId!,
-              "Error loading downloaded MP3s: $e",
-            );
-          }
-
-          String fileName = file.uri.pathSegments.last;
-          String title = fileName.split('_').first;
-          if (title.isEmpty) {
-            title = fileName;
-          }
-
-          loadedRecordings.add(
+            dur = await player.setFilePath(entity.path) ?? Duration.zero;
+          } catch (_) {}
+          final fn = entity.uri.pathSegments.last;
+          String title = fn.split('_').first;
+          if (title.isEmpty) title = fn;
+          loaded.add(
             RecordingFile(
-              id: idCounter++,
+              id: entity.path,
               title: title,
-              path: file.path,
-              fileSizeInBytes: fileSize,
-              dateCreated: dateCreated,
-              duration: duration,
+              path: entity.path,
+              fileSizeInBytes: stat.size,
+              dateCreated: stat.changed,
+              duration: dur,
             ),
           );
         }
       }
     } catch (e) {
-      print('Error loading local recordings: $e');
-      _analyticsService.logActivity(
-        deviceId!,
-        "Error loading local recordings: $e",
-      );
+      _analyticsService.logActivity(deviceId!, 'Error loading recordings: $e');
     } finally {
-      await tempPlayer.dispose();
+      await player.dispose();
+    }
+    loaded.sort((a, b) => b.dateCreated.compareTo(a.dateCreated));
+    if (mounted) setState(() => _recordings = loaded);
+  }
+
+  // ── Sort & filter ─────────────────────────────────────────────────────────
+
+  List<dynamic> _applySort(List<dynamic> list, int tab) {
+    final s = List<dynamic>.from(list);
+    switch (_sortOptions[tab]) {
+      case SortOption.nameAsc:
+        s.sort((a, b) => _titleOf(a).compareTo(_titleOf(b)));
+        break;
+      case SortOption.nameDesc:
+        s.sort((a, b) => _titleOf(b).compareTo(_titleOf(a)));
+        break;
+      case SortOption.dateNewest:
+        s.sort((a, b) => _dateOf(b).compareTo(_dateOf(a)));
+        break;
+      case SortOption.dateOldest:
+        s.sort((a, b) => _dateOf(a).compareTo(_dateOf(b)));
+        break;
+      case SortOption.durationLong:
+        s.sort((a, b) => _durOf(b).compareTo(_durOf(a)));
+        break;
+      case SortOption.sizeLarge:
+        s.sort((a, b) => _sizeOf(b).compareTo(_sizeOf(a)));
+        break;
+    }
+    return s;
+  }
+
+  List<dynamic> _applySearch(List<dynamic> list, int tab) {
+    final q = _searchQueries[tab].toLowerCase().trim();
+    if (q.isEmpty) return list;
+    return list.where((i) => _titleOf(i).contains(q)).toList();
+  }
+
+  String _titleOf(dynamic i) {
+    if (i is SongModel) return i.title.toLowerCase();
+    if (i is RecordingFile) return i.title.toLowerCase();
+    if (i is DownloadedMp3File) return i.title.toLowerCase();
+    return '';
+  }
+
+  DateTime _dateOf(dynamic i) {
+    if (i is SongModel)
+      return DateTime.fromMillisecondsSinceEpoch(i.dateAdded ?? 0);
+    if (i is RecordingFile) return i.dateCreated;
+    if (i is DownloadedMp3File) return i.dateCreated;
+    return DateTime(0);
+  }
+
+  int _durOf(dynamic i) {
+    if (i is SongModel) return i.duration ?? 0;
+    if (i is RecordingFile) return i.duration.inMilliseconds;
+    if (i is DownloadedMp3File) return i.duration.inMilliseconds;
+    return 0;
+  }
+
+  int _sizeOf(dynamic i) {
+    if (i is RecordingFile) return (i as RecordingFile).fileSizeInBytes;
+    if (i is DownloadedMp3File) return (i as DownloadedMp3File).fileSizeInBytes;
+    return 0;
+  }
+
+  String _idOf(dynamic i) {
+    if (i is SongModel) return i.data;
+    if (i is RecordingFile) return i.path;
+    if (i is DownloadedMp3File) return i.path;
+    return '';
+  }
+
+  String _totalStorageLabel() {
+    int b = 0;
+    for (final RecordingFile r in (_recordings ?? [])) b += r.fileSizeInBytes;
+    for (final DownloadedMp3File d in (_downloadedMp3s ?? []))
+      b += d.fileSizeInBytes;
+    if (b == 0) return '';
+    return _formatBytes(b, 1) + ' used';
+  }
+
+  // ── Actions ───────────────────────────────────────────────────────────────
+
+  void _onFileTap(dynamic item) {
+    if (_isSelecting) {
+      _toggleSelect(item);
+      return;
+    }
+    HapticFeedback.lightImpact();
+
+    // Build the full visible list for the active tab — same order the user
+    // sees — so next/previous in the expanded player navigate correctly.
+    final tab = _tabController.index;
+    final List<dynamic> visibleList;
+    if (tab == 0) {
+      visibleList = _applySearch(_applySort(_songs ?? [], tab), tab);
+    } else if (tab == 1) {
+      visibleList = _applySearch(_applySort(_downloadedMp3s ?? [], tab), tab);
+    } else {
+      visibleList = _applySearch(_applySort(_recordings ?? [], tab), tab);
     }
 
-    loadedRecordings.sort((a, b) => b.dateCreated.compareTo(a.dateCreated));
+    final tappedIndex = visibleList.indexOf(item);
+    final queue = visibleList
+        .map((f) => {'path': _idOf(f), 'title': _titleOf(f)})
+        .where((e) => e['path']!.isNotEmpty)
+        .toList();
 
-    if (mounted) {
-      setState(() {
-        _recordings = loadedRecordings;
-      });
+    if (queue.isNotEmpty && tappedIndex != -1) {
+      // Load the whole sorted list as the active local queue, start at tapped item.
+      globalRadioAudioHandler.loadLocalQueueAndPlay(queue, tappedIndex);
+    } else {
+      // Fallback: single-file play (queue is empty or item not found)
+      final path = _idOf(item);
+      final title = _titleOf(item);
+      if (path.isNotEmpty) {
+        globalRadioAudioHandler.playDownloadedFile(File(path), title);
+      }
+    }
+
+    // Fire interstitial every N taps — same pattern as radio screen
+    if (_showInterstitial) {
+      _tapCount++;
+      if (_tapCount % _interstitialEvery == 0) InterstitialAdManager.show();
     }
   }
 
-  // 💡 UPDATED: Unified method to play media from all sources
-  void _playMedia({
-    required dynamic media,
-    required int index,
-    required bool isRecording,
-    required bool isDownloadedMp3,
-  }) async {
-    String title;
-    String filePath;
-    int id;
-    String? artist;
-    Uri? artUri;
-
-    if (isRecording) {
-      final rec = media as RecordingFile;
-      title = rec.title;
-      filePath = rec.path;
-      id = rec.id;
-      artist = 'Recording';
-      artUri = Uri.parse('file:///recording_placeholder_art');
-    } else if (isDownloadedMp3) {
-      final mp3 = media as DownloadedMp3File;
-      title = mp3.title;
-      filePath = mp3.path;
-      id = mp3.id;
-      artist = mp3.artist ?? 'Unknown Artist';
-      artUri = Uri.parse('file:///downloaded_mp3_placeholder_art');
-      final metadata = await TrackMetadataService.getTrackMetadata(filePath);
-      String? coverPath = metadata?.coverPath;
-      String? hiveTitle = metadata?.title;
-      String? hiveArtist = metadata?.artist;
-      title = hiveTitle ?? title;
-      artist = hiveArtist ?? artist;
-      artUri = coverPath != null
-          ? Uri.file(coverPath)
-          : Uri.parse('file:///downloaded_mp3_placeholder_art');
-    } else {
-      final song = media as SongModel;
-      title = song.title;
-      filePath = song.data;
-      id = song.id;
-      artist = song.artist;
-      artUri = (song.albumId != null && song.albumId! > 0)
-          ? Uri.parse('content://media/external/audio/albumart/${song.albumId}')
-          : Uri.parse('file:///music_placeholder_art');
-    }
-
-    print("artist :$artist,title:$title,filePath:$filePath");
-    _analyticsService.logActivity(
-      deviceId!,
-      "artist :$artist,title:$title,filePath:$filePath",
-    );
-    final SongModel newCurrentSong;
-
-    if (_currentSong?.id == id && _mp3Player.playing) {
-      await _mp3Player.pause();
-    } else if (_currentSong?.id == id) {
-      await _mp3Player.play();
-    } else {
-      if (isDownloadedMp3) {
-        final mp3 = media as DownloadedMp3File;
-        filePath = mp3.path;
-        id = mp3.id;
-
-        // Fetch metadata from Hive
-        final metadata = await TrackMetadataService.getTrackMetadata(filePath);
-
-        title = metadata?.title ?? mp3.title;
-        artist = metadata?.artist ?? mp3.artist ?? 'Unknown Artist';
-
-        if (metadata?.coverPath != null &&
-            File(metadata!.coverPath).existsSync()) {
-          artUri = Uri.file(metadata.coverPath);
-        } else {
-          artUri = Uri.parse('file:///downloaded_mp3_placeholder_art');
-        }
-      }
-
-      if (isRecording) {
-        // Create pseudo-SongModel for recordings and downloaded MP3s
-        final Map<String, dynamic> songData = {
-          '_id': id,
-          'title': title,
-          '_data': filePath,
-          'artist': artist,
-          'album_id': -1,
-          'duration': _mp3Player.duration?.inMilliseconds ?? 0,
-        };
-        newCurrentSong = SongModel(songData);
+  void _toggleSelect(dynamic item) {
+    HapticFeedback.selectionClick();
+    final id = _idOf(item);
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+        if (_selectedIds.isEmpty) _isSelecting = false;
       } else {
-        if (isDownloadedMp3) {
-          // Create pseudo SongModel for downloaded MP3s
-          final Map<String, dynamic> songData = {
-            '_id': id,
-            'title': title,
-            '_data': filePath,
-            'artist': artist,
-            'album_id': -1,
-            'duration': _mp3Player.duration?.inMilliseconds ?? 0,
-          };
-          newCurrentSong = SongModel(songData);
-        } else {
-          newCurrentSong = media as SongModel;
-        }
+        _selectedIds.add(id);
       }
+    });
+  }
 
-      setState(() {
-        _currentSong = newCurrentSong;
-        _currentIndex = index;
-        _isCurrentListRecordings = isRecording;
-        _isCurrentListDownloadedMp3s = isDownloadedMp3;
-      });
+  void _enterSelectMode(dynamic item) {
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _isSelecting = true;
+      _selectedIds.add(_idOf(item));
+    });
+  }
 
-      print("Playing file: $filePath");
-      _analyticsService.logActivity(deviceId!, "Playing file: $filePath");
-      try {
-        final file = File(filePath);
-        if (!await file.exists()) {
-          throw Exception('File not found at path: $filePath');
-        }
+  void _onLongPress(dynamic item, bool isRec, bool isDl) {
+    if (_isSelecting) {
+      _toggleSelect(item);
+      return;
+    }
+    HapticFeedback.mediumImpact();
+    _showContextMenu(item, isRec, isDl);
+  }
 
-        final fileLength = await file.length();
-        print('fileLength:$fileLength');
-        _analyticsService.logActivity(deviceId!, "fileLength:$fileLength");
-        if (fileLength < 1024) {
-          throw Exception('File is corrupt or too small: $fileLength bytes');
-        }
-
-        await _mp3Player.setAudioSource(
-          AudioSource.uri(
-            Uri.file(filePath),
-            tag: MediaItem(
-              id: id.toString(),
-              title: title,
-              artist: artist,
-              artUri: artUri,
-              duration: newCurrentSong.duration == null
-                  ? null
-                  : Duration(milliseconds: newCurrentSong.duration!),
-            ),
+  Future<void> _bulkDelete(bool isRec) async {
+    final count = _selectedIds.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Delete files'),
+        content: Text(
+          'Delete $count selected file${count > 1 ? 's' : ''}? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
           ),
-        );
-
-        await _mp3Player.play();
-        _showPlayerSheet();
-      } catch (e) {
-        print("Error playing local file: $e. Path used: $filePath");
-        _analyticsService.logActivity(
-          deviceId!,
-          "Error playing local file: $e. Path used: $filePath",
-        );
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error playing: $title')));
-      }
-    }
-    setState(() {});
-  }
-
-  void _playNext() {
-    List? list;
-    if (_isCurrentListRecordings) {
-      list = _recordings;
-    } else if (_isCurrentListDownloadedMp3s) {
-      list = _downloadedMp3s;
-    } else {
-      list = _songs;
-    }
-
-    if (list == null || list.isEmpty) return;
-
-    int nextIndex = (_currentIndex + 1) % list.length;
-    final nextMedia = list[nextIndex];
-
-    _playMedia(
-      media: nextMedia,
-      index: nextIndex,
-      isRecording: _isCurrentListRecordings,
-      isDownloadedMp3: _isCurrentListDownloadedMp3s,
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('DELETE'),
+          ),
+        ],
+      ),
     );
-  }
-
-  void _playPrevious() {
-    List? list;
-    if (_isCurrentListRecordings) {
-      list = _recordings;
-    } else if (_isCurrentListDownloadedMp3s) {
-      list = _downloadedMp3s;
-    } else {
-      list = _songs;
+    if (ok != true) return;
+    for (final p in _selectedIds) {
+      try {
+        await File(p).delete();
+      } catch (_) {}
     }
-
-    if (list == null || list.isEmpty) return;
-
-    int prevIndex = (_currentIndex - 1 + list.length) % list.length;
-    final prevMedia = list[prevIndex];
-
-    _playMedia(
-      media: prevMedia,
-      index: prevIndex,
-      isRecording: _isCurrentListRecordings,
-      isDownloadedMp3: _isCurrentListDownloadedMp3s,
-    );
+    setState(() {
+      _selectedIds.clear();
+      _isSelecting = false;
+    });
+    HapticFeedback.lightImpact();
+    _showSnackBar('$count file${count > 1 ? 's' : ''} deleted.');
+    if (isRec)
+      _loadLocalRecordings();
+    else
+      _loadDownloadedMp3s();
   }
 
-  void _toggleLoopMode() {
-    setState(() {
-      switch (_loopMode) {
-        case LoopMode.off:
-          _loopMode = LoopMode.one;
-          _mp3Player.setLoopMode(LoopMode.one);
-          break;
-        case LoopMode.one:
-          _loopMode = LoopMode.all;
-          _mp3Player.setLoopMode(LoopMode.all);
-          break;
-        case LoopMode.all:
-          _loopMode = LoopMode.off;
-          _mp3Player.setLoopMode(LoopMode.off);
-          break;
-      }
-    });
-  }
-
-  void _showPlayerSheet() {
-    if (_isPlayerExpanded) return;
-
-    setState(() {
-      _isPlayerExpanded = true;
-    });
-
+  void _showContextMenu(dynamic item, bool isRec, bool isDl) {
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return _buildPlayerSheet();
-      },
-    ).then((_) {
-      if (mounted) {
-        setState(() {
-          _isPlayerExpanded = false;
-        });
-      }
-    });
-  }
-
-  // --- WIDGET HELPERS ---
-
-  Widget _buildPlaceholderArt(
-    double screenWidth,
-    double size,
-    bool isRecording,
-  ) {
-    return Container(
-      width: size,
-      height: size,
-      color: Colors.blueGrey[800],
-      child: Center(
-        child: Icon(
-          isRecording ? Icons.mic : Icons.music_note,
-          color: Colors.white70,
-          size: screenWidth * 0.1,
-        ),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-    );
-  }
-
-  // 💡 NEW: Helper to build the permission denied screen
-  Widget _buildPermissionDenied(
-    double screenWidth,
-    double screenHeight,
-    double emptyIconSize,
-    double emptyTitleSize,
-    double emptySubtitleSize,
-    double buttonPadding,
-    double iconSize,
-  ) {
-    return Center(
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.1),
+      builder: (_) => SafeArea(
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.folder_open,
-              size: emptyIconSize,
-              color: Colors.grey[400],
-            ),
-            SizedBox(height: screenHeight * 0.03),
-            Text(
-              'Permission Required',
-              style: TextStyle(
-                fontSize: emptyTitleSize,
-                fontWeight: FontWeight.bold,
+            Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
               ),
             ),
-            SizedBox(height: screenHeight * 0.015),
-            Text(
-              'We need access to your audio files to play local music.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey, fontSize: emptySubtitleSize),
-            ),
-            SizedBox(height: screenHeight * 0.04),
-            ElevatedButton.icon(
-              onPressed: _checkAndRequestPermissions,
-              icon: Icon(Icons.security, size: iconSize * 0.8),
-              label: Text(
-                'Grant Permission',
-                style: TextStyle(fontSize: emptySubtitleSize),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blueGrey[900],
-                foregroundColor: Colors.white,
-                padding: EdgeInsets.symmetric(
-                  horizontal: buttonPadding,
-                  vertical: screenHeight * 0.02,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(screenWidth * 0.075),
-                ),
-              ),
-            ),
-            SizedBox(height: screenHeight * 0.02),
-            TextButton(
-              onPressed: () => openAppSettings(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
               child: Text(
-                'Open Settings',
-                style: TextStyle(fontSize: emptySubtitleSize),
+                _titleOf(item),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
               ),
             ),
+            const Divider(height: 1),
+            _ctxTile(Icons.play_arrow_rounded, 'Play', () {
+              Navigator.pop(context);
+              _onFileTap(item);
+            }),
+            if (isRec || isDl)
+              _ctxTile(Icons.ios_share_rounded, 'Share', () {
+                Navigator.pop(context);
+                _shareFile(item);
+              }),
+            if (isRec)
+              _ctxTile(Icons.drive_file_rename_outline_rounded, 'Rename', () {
+                Navigator.pop(context);
+                _showRenameSheet(item as RecordingFile);
+              }),
+            _ctxTile(Icons.playlist_add_check_rounded, 'Select', () {
+              Navigator.pop(context);
+              _enterSelectMode(item);
+            }),
+            if (isRec || isDl)
+              _ctxTile(Icons.delete_outline_rounded, 'Delete', () {
+                Navigator.pop(context);
+                _deleteFile(item, isRec);
+              }, color: Colors.red),
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
   }
 
-  // Helper function to show a simple snackbar
-  void _showSnackBar(String message) {
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-    }
-  }
+  Widget _ctxTile(
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
+    Color? color,
+  }) => ListTile(
+    leading: Icon(icon, color: color ?? const Color(0xFF7C4DFF), size: 22),
+    title: Text(label, style: TextStyle(color: color, fontSize: 15)),
+    onTap: onTap,
+    dense: true,
+  );
 
-  // 1. Delete Logic
-  Future<void> _deleteRecording(RecordingFile recording) async {
-    try {
-      final filePath = recording.path;
-
-      final file = File(filePath);
-      if (await file.exists()) {
-        // 💡 Stop playback if the file being deleted is currently playing
-        if (_isCurrentListRecordings && _currentSong?.data == filePath) {
-          await _mp3Player.stop();
-          setState(() {
-            _currentSong = null;
-            _currentIndex = -1;
-          });
-        }
-
-        await file.delete();
-        _showSnackBar("Recording '${recording.title}' deleted successfully.");
-
-        // 💡 Reload the recordings list to update the UI
-        _loadLocalRecordings();
-      } else {
-        _showSnackBar("Error: File not found at path.");
-      }
-    } catch (e) {
-      print("Error deleting recording: $e");
-      _analyticsService.logActivity(deviceId!, "Error deleting recording: $e");
-      _showSnackBar("Error deleting recording.");
-    }
-  }
-
-  // 2. Share Logic
-  Future<void> _shareRecording(RecordingFile recording) async {
-    try {
-      final filePath = recording.path;
-      final file = File(filePath);
-
-      if (await file.exists()) {
-        // 💡 FINAL FIX: Use the static method Share.shareXFiles().
-        // This is the officially recommended, non-deprecated replacement for sharing XFiles.
-        await Share.shareXFiles([
-          XFile(filePath),
-        ], subject: 'Check out my recording: ${recording.title}');
-      } else {
-        _showSnackBar("Error: File not found for sharing.");
-      }
-    } catch (e) {
-      print("Error sharing recording: $e");
-      _analyticsService.logActivity(deviceId!, "Error sharing recording: $e");
-      _showSnackBar("Error initiating share action.");
-    }
-  }
-
-  // 3. Confirmation Dialog
-  Future<void> _confirmAndDeleteOld(RecordingFile recording) async {
-    final bool? shouldDelete = await showDialog<bool>(
+  Future<void> _showRenameSheet(RecordingFile file) async {
+    final ctrl = TextEditingController(text: file.title);
+    final newName = await showModalBottomSheet<String>(
       context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Confirm Deletion'),
-          content: Text(
-            'Are you sure you want to delete the recording "${recording.title}"? This cannot be undone.',
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () => Navigator.of(context).pop(false),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 20,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Rename recording',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
             ),
-            TextButton(
-              child: const Text('DELETE', style: TextStyle(color: Colors.red)),
-              onPressed: () => Navigator.of(context).pop(true),
+            const SizedBox(height: 14),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Recording name',
+                filled: true,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: OutlinedButton.styleFrom(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7C4DFF),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Rename'),
+                  ),
+                ),
+              ],
             ),
           ],
-        );
-      },
+        ),
+      ),
     );
-
-    if (shouldDelete == true) {
-      _deleteRecording(recording);
+    ctrl.dispose();
+    if (newName == null || newName.isEmpty || newName == file.title) return;
+    try {
+      final ext = file.path.split('.').last;
+      final dir = file.path.substring(0, file.path.lastIndexOf('/'));
+      await File(
+        file.path,
+      ).rename('$dir/${newName}_${DateTime.now().millisecondsSinceEpoch}.$ext');
+      HapticFeedback.lightImpact();
+      _showSnackBar('Renamed to "$newName".');
+      _loadLocalRecordings();
+    } catch (e) {
+      _showSnackBar('Could not rename: $e');
     }
   }
 
-  // 💡 NEW: Helper to build the song/recording list view
-  Widget _buildSongList({
-    required List? list,
-    required bool isRecordingList,
-    required bool isDownloadedMp3List,
-    required IconData emptyIcon,
-    required String emptyTitle,
-    required String emptySubtitle,
-    required Function() onRefresh,
-    required double screenWidth,
-    required double screenHeight,
-    required double cardMargin,
-    required double emptyIconSize,
-    required double emptyTitleSize,
-    required double emptySubtitleSize,
-    required double buttonPadding,
-    required double iconSize,
-  }) {
-    if (list == null) {
-      return const Center(child: CircularProgressIndicator());
+  Future<void> _shareFile(dynamic file) async {
+    HapticFeedback.lightImpact();
+    try {
+      final path = _idOf(file);
+      final title = _titleOf(file);
+      if (await File(path).exists()) {
+        await Share.shareXFiles([XFile(path)], subject: 'Check out: $title');
+      } else {
+        _showSnackBar('Error: File not found.');
+      }
+    } catch (e) {
+      _showSnackBar('Error sharing file.');
+      _analyticsService.logActivity(deviceId!, 'Error sharing: $e');
     }
+  }
 
-    if (list.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.1),
+  Future<void> _deleteFile(dynamic file, bool isRec) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Delete file'),
+        content: Text('Delete "${_titleOf(file)}"? This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('DELETE'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      final f = File(_idOf(file));
+      if (await f.exists()) {
+        await f.delete();
+        HapticFeedback.lightImpact();
+        _showSnackBar('"${_titleOf(file)}" deleted.');
+        if (isRec)
+          _loadLocalRecordings();
+        else
+          _loadDownloadedMp3s();
+      } else {
+        _showSnackBar('Error: File not found.');
+      }
+    } catch (e) {
+      _analyticsService.logActivity(deviceId!, 'Error deleting: $e');
+      _showSnackBar('Error deleting file.');
+    }
+  }
+
+  void _showSnackBar(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  void _showSortSheet() {
+    final tab = _tabController.index;
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, set) => SafeArea(
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(emptyIcon, size: emptyIconSize, color: Colors.grey[400]),
-              SizedBox(height: screenHeight * 0.03),
-              Text(
-                emptyTitle,
-                style: TextStyle(
-                  fontSize: emptyTitleSize,
-                  fontWeight: FontWeight.bold,
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              SizedBox(height: screenHeight * 0.015),
-              Text(
-                emptySubtitle,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.grey,
-                  fontSize: emptySubtitleSize,
-                ),
-              ),
-              SizedBox(height: screenHeight * 0.04),
-              ElevatedButton.icon(
-                onPressed: onRefresh,
-                icon: Icon(Icons.refresh, size: iconSize * 0.8),
-                label: Text(
-                  'Refresh List',
-                  style: TextStyle(fontSize: emptySubtitleSize),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blueGrey[900],
-                  foregroundColor: Colors.white,
-                  padding: EdgeInsets.symmetric(
-                    horizontal: buttonPadding,
-                    vertical: screenHeight * 0.02,
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 4, 20, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Sort by',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(screenWidth * 0.075),
+                ),
+              ),
+              const Divider(height: 1),
+              ...SortOption.values.map(
+                (opt) => RadioListTile<SortOption>(
+                  value: opt,
+                  groupValue: _sortOptions[tab],
+                  activeColor: const Color(0xFF7C4DFF),
+                  secondary: Icon(
+                    opt.icon,
+                    size: 20,
+                    color: const Color(0xFF7C4DFF),
+                  ),
+                  title: Text(opt.label, style: const TextStyle(fontSize: 14)),
+                  onChanged: (val) {
+                    if (val == null) return;
+                    set(() {});
+                    setState(() => _sortOptions[tab] = val);
+                    _saveSortPref(tab);
+                    Navigator.pop(ctx);
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Build ─────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final sw = MediaQuery.of(context).size.width;
+    final sh = MediaQuery.of(context).size.height;
+
+    final double emptyIconSz = sw * 0.2;
+    final double emptyTitleSz = sw * 0.05;
+    final double emptySubSz = sw * 0.035;
+    final EdgeInsets btnPad = EdgeInsets.symmetric(
+      horizontal: sw * 0.1,
+      vertical: 12,
+    );
+    final double iconSz = sw * 0.07;
+
+    final tab = _tabController.index;
+    final isRecTab = tab == 2;
+    final isDlTab = tab == 1;
+
+    return Scaffold(
+      extendBody: true,
+      body: Stack(
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: isDark
+                    ? [const Color(0xFF0D0D18), Colors.black]
+                    : [Colors.white, Colors.grey.shade50],
+              ),
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: Column(
+                children: [
+                  _buildHeader(isDark, sw),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 200),
+                    child: _isSelecting
+                        ? _buildSelectToolbar(isRecTab, isDlTab)
+                        : const SizedBox.shrink(),
+                  ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 200),
+                    child: _searchVisible
+                        ? _buildSearchBar(isDark, tab)
+                        : const SizedBox.shrink(),
+                  ),
+                  Expanded(
+                    child: _isCheckingPermission
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                              color: Color(0xFF7C4DFF),
+                            ),
+                          )
+                        : !_hasPermission
+                        ? _buildPermissionDenied(
+                            sw,
+                            sh,
+                            emptyIconSz,
+                            emptyTitleSz,
+                            emptySubSz,
+                            iconSz,
+                          )
+                        : TabBarView(
+                            controller: _tabController,
+                            children: [
+                              _buildSongList(
+                                rawList: (_songs ?? []).cast<dynamic>(),
+                                tabIndex: 0,
+                                isRec: false,
+                                isDl: false,
+                                emptyIcon: Icons.music_note_outlined,
+                                emptyTitle: 'No Music Found',
+                                emptySubtitle:
+                                    'Check your device storage for MP3 files.',
+                                onRefresh: _loadAllSongs,
+                                emptyIconSz: emptyIconSz,
+                                emptyTitleSz: emptyTitleSz,
+                                emptySubSz: emptySubSz,
+                                btnPad: btnPad,
+                              ),
+                              _buildSongList(
+                                rawList: (_downloadedMp3s ?? [])
+                                    .cast<dynamic>(),
+                                tabIndex: 1,
+                                isRec: false,
+                                isDl: true,
+                                emptyIcon: Icons.download_for_offline_outlined,
+                                emptyTitle: 'No Downloads',
+                                emptySubtitle:
+                                    'Songs you download will appear here.',
+                                onRefresh: _loadDownloadedMp3s,
+                                emptyIconSz: emptyIconSz,
+                                emptyTitleSz: emptyTitleSz,
+                                emptySubSz: emptySubSz,
+                                btnPad: btnPad,
+                              ),
+                              _buildSongList(
+                                rawList: (_recordings ?? []).cast<dynamic>(),
+                                tabIndex: 2,
+                                isRec: true,
+                                isDl: false,
+                                emptyIcon: Icons.mic_none_outlined,
+                                emptyTitle: 'No Recordings',
+                                emptySubtitle:
+                                    'Your radio recordings will be saved here.',
+                                onRefresh: _loadLocalRecordings,
+                                emptyIconSz: emptyIconSz,
+                                emptyTitleSz: emptyTitleSz,
+                                emptySubSz: emptySubSz,
+                                btnPad: btnPad,
+                              ),
+                            ],
+                          ),
+                  ),
+                  StreamBuilder<MediaItem?>(
+                    stream: globalRadioAudioHandler.mediaItem,
+                    builder: (context, snap) {
+                      final mi = snap.data;
+                      if (mi == null)
+                        return _showBanner
+                            ? const BannerAdWidget()
+                            : const SizedBox.shrink();
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_showBanner) const BannerAdWidget(),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 105),
+                            child: _buildMiniPlayer(),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            right: 16,
+            bottom: 110,
+            child: AnimatedOpacity(
+              opacity: _showScrollTop ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 250),
+              child: IgnorePointer(
+                ignoring: !_showScrollTop,
+                child: FloatingActionButton.small(
+                  heroTag: 'mp3_scroll_top_fab',
+                  backgroundColor: const Color(0xFF7C4DFF),
+                  elevation: 4,
+                  onPressed: _scrollToTop,
+                  child: const Icon(
+                    Icons.keyboard_arrow_up_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Header ────────────────────────────────────────────────────────────────
+
+  Widget _buildHeader(bool isDark, double sw) {
+    final storage = _totalStorageLabel();
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF0D0D18) : Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 3,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(
+              top: 14,
+              left: 16,
+              right: 8,
+              bottom: 2,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: _scrollToTop,
+                    behavior: HitTestBehavior.opaque,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Library',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        if (storage.isNotEmpty)
+                          Text(
+                            storage,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    _searchVisible
+                        ? Icons.search_off_rounded
+                        : Icons.search_rounded,
+                  ),
+                  tooltip: 'Search',
+                  onPressed: () => setState(() {
+                    _searchVisible = !_searchVisible;
+                    if (!_searchVisible) {
+                      for (final tc in _searchControllers) tc.clear();
+                      for (int i = 0; i < 3; i++) _searchQueries[i] = '';
+                    }
+                  }),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.sort_rounded),
+                  tooltip: 'Sort',
+                  onPressed: _showSortSheet,
+                ),
+              ],
+            ),
+          ),
+          TabBar(
+            controller: _tabController,
+            isScrollable: false,
+            indicatorColor: const Color(0xFF7C4DFF),
+            indicatorWeight: 3,
+            labelColor: const Color(0xFF7C4DFF),
+            unselectedLabelColor: Colors.grey,
+            labelStyle: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+            tabs: [
+              Tab(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: _tabLabel(Icons.music_note, 'Music', _songs?.length),
+                ),
+              ),
+              Tab(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: _tabLabel(
+                    Icons.download_done_rounded,
+                    'Downloads',
+                    _downloadedMp3s?.length,
+                  ),
+                ),
+              ),
+              Tab(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: _tabLabel(
+                    Icons.mic,
+                    'Recordings',
+                    _recordings?.length,
                   ),
                 ),
               ),
             ],
           ),
-        ),
-      );
-    }
-
-    final listItemHeight = screenHeight * 0.1;
-    final albumArtSize = screenWidth * 0.30;
-    final cardPadding = screenWidth * 0.03;
-    final titleFontSize = screenWidth * 0.04;
-    final subtitleFontSize = screenWidth * 0.028;
-    final trailingButtonSize = screenWidth * 0.1;
-
-    return ListView.builder(
-      itemCount: list.length,
-      padding: EdgeInsets.symmetric(vertical: screenHeight * 0.01),
-      itemBuilder: (context, index) {
-        final media = list[index];
-        if (media == null) return const SizedBox.shrink();
-
-        final isMediaStore = !isRecordingList && !isDownloadedMp3List;
-        final id = isMediaStore ? (media as SongModel).id : media.id;
-        final title = isMediaStore ? (media as SongModel).title : media.title;
-
-        String artistOrFileType = 'Unknown Type';
-        String sizeDurationLine = 'Size: N/A | Duration: N/A';
-        String dateLine = 'Date: N/A';
-
-        if (isRecordingList && media is RecordingFile) {
-          artistOrFileType = 'Recording';
-          sizeDurationLine =
-              'Size: ${_formatBytes(media.fileSizeInBytes, 1)} | Duration: ${_formatDuration(media.duration)}';
-          dateLine =
-              'Created: ${DateFormat('MMM dd, yyyy HH:mm').format(media.dateCreated)}';
-        } else if (isDownloadedMp3List && media is DownloadedMp3File) {
-          artistOrFileType = media.artist ?? 'Downloaded MP3';
-          sizeDurationLine =
-              'Size: ${_formatBytes(media.fileSizeInBytes, 1)} | Duration: ${_formatDuration(media.duration)}';
-          dateLine =
-              'Downloaded: ${DateFormat('MMM dd, yyyy HH:mm').format(media.dateCreated)}';
-        } else if (media is SongModel) {
-          final SongModel song = media;
-          artistOrFileType = song.artist ?? 'Unknown Artist';
-          final sizeInBytes = song.size ?? 0;
-          final durationMs = song.duration ?? 0;
-          final dateAddedSeconds = song.dateAdded ?? 0;
-          final dateAdded = dateAddedSeconds > 0
-              ? DateTime.fromMillisecondsSinceEpoch(dateAddedSeconds * 1000)
-              : DateTime.fromMillisecondsSinceEpoch(0);
-
-          sizeDurationLine =
-              'Size: ${_formatBytes(sizeInBytes, 1)} | Duration: ${_formatDuration(Duration(milliseconds: durationMs))}';
-          dateLine =
-              'Added: ${DateFormat('MMM dd, yyyy HH:mm').format(dateAdded)}';
-        }
-
-        return StreamBuilder<PlayerState>(
-          stream: _mp3Player.playerStateStream,
-          builder: (context, snapshot) {
-            final playerState = snapshot.data;
-            final isCurrentlyPlaying =
-                _currentSong?.id == id && playerState?.playing == true;
-
-            return GestureDetector(
-              onTap: () => _playMedia(
-                media: media,
-                index: index,
-                isRecording: isRecordingList,
-                isDownloadedMp3: isDownloadedMp3List,
-              ),
-              child: Container(
-                margin: EdgeInsets.symmetric(
-                  horizontal: cardMargin,
-                  vertical: cardMargin * 0.2,
-                ),
-                padding: EdgeInsets.all(cardPadding),
-                decoration: BoxDecoration(
-                  color: isCurrentlyPlaying
-                      ? Colors.blueGrey[50]
-                      : Theme.of(context).cardColor,
-                  borderRadius: BorderRadius.circular(screenWidth * 0.0375),
-                  border: Border.all(
-                    color: isCurrentlyPlaying
-                        ? Colors.blueGrey
-                        : Colors.grey[200]!,
-                    width: isCurrentlyPlaying ? screenWidth * 0.005 : 1,
-                  ),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: (isDownloadedMp3List && media is DownloadedMp3File)
-                          ? FutureBuilder(
-                              future: TrackMetadataService.getTrackMetadata(
-                                media.path,
-                              ),
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return _buildPlaceholderArt(
-                                    screenWidth,
-                                    albumArtSize,
-                                    false,
-                                  );
-                                }
-
-                                final metadata = snapshot.data;
-
-                                if (metadata != null &&
-                                    metadata.coverPath != null &&
-                                    File(metadata.coverPath).existsSync()) {
-                                  return Image.file(
-                                    File(metadata.coverPath),
-                                    width: albumArtSize,
-                                    height: albumArtSize,
-                                    fit: BoxFit.cover,
-                                  );
-                                }
-                                print(
-                                  'title: $title, artistOrFileType: $artistOrFileType',
-                                );
-                                return _buildPlaceholderArt(
-                                  screenWidth,
-                                  albumArtSize,
-                                  false,
-                                );
-                              },
-                            )
-                          : QueryArtworkWidget(
-                              id: id,
-                              type: ArtworkType.AUDIO,
-                              artworkBorder: BorderRadius.circular(8),
-                              nullArtworkWidget: _buildPlaceholderArt(
-                                screenWidth,
-                                albumArtSize,
-                                isRecordingList,
-                              ),
-                              artworkFit: BoxFit.cover,
-                              artworkHeight: albumArtSize,
-                              artworkWidth: albumArtSize,
-                            ),
-                    ),
-                    SizedBox(width: screenWidth * 0.04),
-
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            title,
-                            style: TextStyle(
-                              fontSize: titleFontSize,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(
-                                context,
-                              ).textTheme.bodyLarge!.color,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            artistOrFileType,
-                            style: TextStyle(
-                              fontSize: subtitleFontSize,
-                              color: Theme.of(
-                                context,
-                              ).textTheme.bodyLarge!.color?.withAlpha(400),
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            sizeDurationLine,
-                            style: TextStyle(
-                              fontSize: subtitleFontSize,
-                              color: Theme.of(
-                                context,
-                              ).textTheme.bodyLarge!.color?.withAlpha(400),
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            dateLine,
-                            style: TextStyle(
-                              fontSize: subtitleFontSize,
-                              color: Theme.of(
-                                context,
-                              ).textTheme.bodyLarge!.color?.withAlpha(400),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    (isCurrentlyPlaying
-                        ? const Icon(Icons.volume_up, color: Colors.blue)
-                        : SizedBox(width: trailingButtonSize)),
-                    if (isRecordingList || isDownloadedMp3List)
-                      PopupMenuButton<String>(
-                        onSelected: (value) {
-                          final selectedFile = list[index];
-                          if (value == 'share') {
-                            _shareRecording(selectedFile);
-                          } else if (value == 'delete') {
-                            _confirmAndDeleteOld(selectedFile);
-                          }
-                        },
-                        itemBuilder: (BuildContext context) =>
-                            <PopupMenuEntry<String>>[
-                              const PopupMenuItem<String>(
-                                value: 'share',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.share, size: 20),
-                                    SizedBox(width: 8),
-                                    Text('Share File'),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuItem<String>(
-                                value: 'delete',
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.delete_forever,
-                                      color: Colors.red,
-                                      size: 20,
-                                    ),
-                                    SizedBox(width: 8),
-                                    Text('Delete File'),
-                                  ],
-                                ),
-                              ),
-                            ],
-                        icon: const Icon(Icons.more_vert),
-                      ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+        ],
+      ),
     );
   }
 
-  Widget _buildMiniPlayer() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
+  Widget _tabLabel(IconData icon, String label, int? count) => Row(
+    mainAxisSize: MainAxisSize.min,
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      Icon(icon, size: 16),
+      const SizedBox(width: 4),
+      Text(label),
+      if (count != null && count > 0) ...[
+        const SizedBox(width: 5),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          decoration: BoxDecoration(
+            color: const Color(0xFF7C4DFF),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            '$count',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
+    ],
+  );
 
-    // Mini Player Sizing
-    final miniPlayerHeight = screenHeight * 0.1;
-    final albumArtSize = screenWidth * 0.12;
-    final cardPadding = screenWidth * 0.02;
-    final titleFontSize = screenWidth * 0.04;
-    final subtitleFontSize = screenWidth * 0.033;
-    final controlIconSize = screenWidth * 0.07;
+  Widget _buildSearchBar(bool isDark, int tab) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withOpacity(0.08) : Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: _searchQueries[tab].isNotEmpty
+              ? const Color(0xFF7C4DFF).withOpacity(0.5)
+              : Colors.transparent,
+          width: 1.5,
+        ),
+      ),
+      child: TextField(
+        controller: _searchControllers[tab],
+        autofocus: true,
+        style: TextStyle(color: isDark ? Colors.white : Colors.black),
+        decoration: InputDecoration(
+          icon: Icon(
+            Icons.search,
+            color: _searchQueries[tab].isNotEmpty
+                ? const Color(0xFF7C4DFF)
+                : Colors.grey[500],
+            size: 18,
+          ),
+          hintText: 'Search ${['songs', 'downloads', 'recordings'][tab]}...',
+          hintStyle: TextStyle(color: Colors.grey[500]),
+          border: InputBorder.none,
+          suffixIcon: _searchQueries[tab].isNotEmpty
+              ? IconButton(
+                  icon: Icon(Icons.close, color: Colors.grey[500], size: 18),
+                  onPressed: () => _searchControllers[tab].clear(),
+                )
+              : null,
+        ),
+      ),
+    ),
+  );
 
-    return StreamBuilder<PlayerState>(
-      stream: _mp3Player.playerStateStream,
-      builder: (context, snapshot) {
-        final playing = snapshot.data?.playing ?? false;
+  Widget _buildSelectToolbar(bool isRec, bool isDl) => Container(
+    color: const Color(0xFF7C4DFF).withOpacity(0.08),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    child: Row(
+      children: [
+        Text(
+          '${_selectedIds.length} selected',
+          style: const TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF7C4DFF),
+          ),
+        ),
+        const Spacer(),
+        if (isRec || isDl)
+          TextButton.icon(
+            onPressed: () => _bulkDelete(isRec),
+            icon: const Icon(
+              Icons.delete_outline_rounded,
+              size: 18,
+              color: Colors.red,
+            ),
+            label: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        TextButton(
+          onPressed: () => setState(() {
+            _isSelecting = false;
+            _selectedIds.clear();
+          }),
+          child: const Text('Cancel'),
+        ),
+      ],
+    ),
+  );
 
-        return GestureDetector(
-          // 💡 FIX: Tap to expand the player sheet
-          onTap: _isPlayerExpanded ? null : _showPlayerSheet,
-          child: Container(
-            height: miniPlayerHeight,
-            padding: EdgeInsets.symmetric(horizontal: cardPadding * 2),
+  // ── Ad injection helper ───────────────────────────────────────────────────
+
+  /// Injects NativeInFeedAdTile sentinels (null) into a flat item list.
+  /// _DateHeader objects pass through unchanged and are excluded from the
+  /// everyNItems row counter — spacing is relative to content rows only.
+  List<dynamic> _injectAds(List<dynamic> items, InListPlacement p) {
+    if (!p.enabled || items.isEmpty) return items;
+    final every = p.everyNItems.clamp(1, 9999);
+    final firstPos = p.firstAdPosition; // 0 → use everyNItems rhythm only
+    final maxAds = p.maxAds; // 0 → unlimited
+
+    final result = <dynamic>[];
+    int adCount = 0;
+    int rows = 0; // content rows only — _DateHeaders excluded
+    int contentIdx = 0; // 1-based absolute content index for firstPos
+
+    for (int i = 0; i < items.length; i++) {
+      result.add(items[i]);
+
+      // Headers are structural — don't count them toward ad spacing.
+      if (items[i] is _DateHeader) continue;
+
+      rows++;
+      contentIdx++;
+
+      final hitFirst = firstPos > 0 && contentIdx == firstPos;
+      final hitRegular = firstPos > 0
+          ? (contentIdx > firstPos && (contentIdx - firstPos) % every == 0)
+          : rows >= every;
+
+      if (hitFirst || hitRegular) {
+        if (maxAds == 0 || adCount < maxAds) {
+          result.add(null); // null = ad slot sentinel
+          adCount++;
+          rows = 0;
+        }
+      }
+    }
+    return result;
+  }
+
+  // ── Song list ─────────────────────────────────────────────────────────────
+
+  Widget _buildSongList({
+    required List<dynamic> rawList,
+    required int tabIndex,
+    required bool isRec,
+    required bool isDl,
+    required IconData emptyIcon,
+    required String emptyTitle,
+    required String emptySubtitle,
+    required Future<void> Function() onRefresh,
+    required double emptyIconSz,
+    required double emptyTitleSz,
+    required double emptySubSz,
+    required EdgeInsets btnPad,
+  }) {
+    final sorted = _applySort(rawList, tabIndex);
+    final filtered = _applySearch(sorted, tabIndex);
+
+    // Pick the correct placement config for this tab
+    final placement = tabIndex == 0
+        ? _mp3ListPlacement
+        : tabIndex == 1
+        ? _downloadsListPlacement
+        : _recordingsListPlacement;
+
+    Widget child;
+    if (filtered.isEmpty) {
+      child = _buildEmptyState(
+        icon: emptyIcon,
+        title: emptyTitle,
+        subtitle: emptySubtitle,
+        onRefresh: onRefresh,
+        emptyIconSz: emptyIconSz,
+        emptyTitleSz: emptyTitleSz,
+        emptySubSz: emptySubSz,
+        btnPad: btnPad,
+      );
+    } else {
+      child = StreamBuilder<MediaItem?>(
+        stream: globalRadioAudioHandler.mediaItem,
+        builder: (context, ms) {
+          final currentId = ms.data?.id;
+          return StreamBuilder<PlaybackState>(
+            stream: globalRadioAudioHandler.playbackState,
+            builder: (context, ps) {
+              final playing = ps.data?.playing ?? false;
+              // Group recordings by date, then inject ads
+              final grouped = isRec ? _buildGroupedItems(filtered) : filtered;
+              final items = _injectAds(grouped, placement);
+
+              return ListView.builder(
+                controller: _scrollControllers[tabIndex],
+                physics: const AlwaysScrollableScrollPhysics(),
+                itemCount: items.length,
+                padding: const EdgeInsets.only(bottom: 140, top: 8),
+                itemBuilder: (context, idx) {
+                  final entry = items[idx];
+
+                  // null sentinel = native in-feed ad slot
+                  if (entry == null) {
+                    return NativeInFeedAdTile(
+                      key: ValueKey('mp3_ad_${tabIndex}_$idx'),
+                    );
+                  }
+
+                  if (entry is _DateHeader)
+                    return _buildDateHeader(entry.label);
+
+                  final id = _idOf(entry);
+                  final title = _titleOf(entry);
+                  String subtitle = '';
+                  Duration dur = Duration.zero;
+                  int size = 0;
+                  if (entry is SongModel) {
+                    subtitle = entry.artist ?? 'Unknown Artist';
+                    dur = Duration(milliseconds: entry.duration ?? 0);
+                  } else if (entry is RecordingFile) {
+                    subtitle = _formatBytes(entry.fileSizeInBytes, 1);
+                    dur = entry.duration;
+                    size = entry.fileSizeInBytes;
+                  } else if (entry is DownloadedMp3File) {
+                    subtitle =
+                        entry.artist ?? _formatBytes(entry.fileSizeInBytes, 1);
+                    dur = entry.duration;
+                    size = entry.fileSizeInBytes;
+                  }
+
+                  final isSel = currentId != null && currentId == id;
+                  final isPlay = isSel && playing;
+                  final isMSel = _selectedIds.contains(id);
+                  final canSw = isRec || isDl;
+
+                  Widget tile = _buildListTile(
+                    item: entry,
+                    id: id,
+                    title: title,
+                    subtitle: subtitle,
+                    dur: dur,
+                    size: size,
+                    isSel: isSel,
+                    isPlay: isPlay,
+                    isRec: isRec,
+                    isDl: isDl,
+                    isMSel: isMSel,
+                  );
+
+                  if (canSw && !_isSelecting) {
+                    tile = Dismissible(
+                      key: Key(id),
+                      direction: DismissDirection.endToStart,
+                      background: Container(
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 20),
+                        margin: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade600,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: const [
+                            Icon(
+                              Icons.delete_outline_rounded,
+                              color: Colors.white,
+                              size: 26,
+                            ),
+                            SizedBox(height: 3),
+                            Text(
+                              'Delete',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      confirmDismiss: (_) async {
+                        HapticFeedback.mediumImpact();
+                        return await showDialog<bool>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                title: const Text('Delete File'),
+                                content: Text(
+                                  'Delete "$title"? This cannot be undone.',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    child: const Text('Cancel'),
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(false),
+                                  ),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.red,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                    ),
+                                    child: const Text('DELETE'),
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(true),
+                                  ),
+                                ],
+                              ),
+                            ) ??
+                            false;
+                      },
+                      onDismissed: (_) => _deleteFile(entry, isRec),
+                      child: tile,
+                    );
+                  }
+                  return tile;
+                },
+              );
+            },
+          );
+        },
+      );
+    }
+
+    return RefreshIndicator(
+      color: const Color(0xFF7C4DFF),
+      strokeWidth: 2.5,
+      onRefresh: () async {
+        HapticFeedback.mediumImpact();
+        await onRefresh();
+      },
+      child: child,
+    );
+  }
+
+  List<dynamic> _buildGroupedItems(List<dynamic> recs) {
+    final result = <dynamic>[];
+    String? last;
+    final now = DateTime.now();
+    for (final r in recs) {
+      final lbl = _dayLabel(_dateOf(r), now);
+      if (lbl != last) {
+        result.add(_DateHeader(lbl));
+        last = lbl;
+      }
+      result.add(r);
+    }
+    return result;
+  }
+
+  String _dayLabel(DateTime d, DateTime now) {
+    final day = DateTime(d.year, d.month, d.day);
+    final today = DateTime(now.year, now.month, now.day);
+    final diff = today.difference(day).inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Yesterday';
+    if (diff < 7) return '$diff days ago';
+    const months = [
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[d.month]} ${d.day}, ${d.year}';
+  }
+
+  Widget _buildDateHeader(String label) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+    child: Text(
+      label,
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.bold,
+        color: Colors.grey[500],
+        letterSpacing: 0.4,
+      ),
+    ),
+  );
+
+  Widget _buildListTile({
+    required dynamic item,
+    required String id,
+    required String title,
+    required String subtitle,
+    required Duration dur,
+    required int size,
+    required bool isSel,
+    required bool isPlay,
+    required bool isRec,
+    required bool isDl,
+    required bool isMSel,
+  }) {
+    final canAct = isRec || isDl;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: isMSel
+            ? const Color(0xFF7C4DFF).withOpacity(0.12)
+            : isSel
+            ? const Color(0xFF7C4DFF).withOpacity(0.07)
+            : (isDark ? const Color(0xFF1E1E2E) : Colors.white),
+        border: Border.all(
+          color: isMSel
+              ? const Color(0xFF7C4DFF).withOpacity(0.5)
+              : isSel
+              ? const Color(0xFF7C4DFF).withOpacity(0.3)
+              : (isDark
+                    ? Colors.white.withOpacity(0.05)
+                    : Colors.black.withOpacity(0.04)),
+          width: isMSel || isSel ? 1.5 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isSel
+                ? const Color(0xFF7C4DFF).withOpacity(0.1)
+                : Colors.black.withOpacity(0.04),
+            blurRadius: isSel ? 12 : 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        leading: _buildAvatar(isRec, isSel, isPlay, isMSel),
+        title: Text(
+          title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
+            color: isSel ? const Color(0xFF7C4DFF) : null,
+            fontSize: 14,
+          ),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 3),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.grey[400] : Colors.grey[600],
+                  ),
+                ),
+              ),
+              if (dur != Duration.zero)
+                _Chip(
+                  label: _formatDuration(dur),
+                  icon: Icons.timer_outlined,
+                  color: const Color(0xFF7C4DFF),
+                ),
+              if (size > 0) ...[
+                const SizedBox(width: 4),
+                _Chip(
+                  label: _formatBytes(size, 1),
+                  icon: Icons.storage_outlined,
+                  color: Colors.blueGrey,
+                ),
+              ],
+            ],
+          ),
+        ),
+        trailing: _isSelecting
+            ? Checkbox(
+                value: isMSel,
+                activeColor: const Color(0xFF7C4DFF),
+                onChanged: (_) => _toggleSelect(item),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (canAct)
+                    GestureDetector(
+                      onTap: () => _shareFile(item),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF7C4DFF).withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.ios_share_rounded,
+                          size: 16,
+                          color: Color(0xFF7C4DFF),
+                        ),
+                      ),
+                    ),
+                  const SizedBox(width: 6),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    transitionBuilder: (c, a) =>
+                        ScaleTransition(scale: a, child: c),
+                    child: Icon(
+                      isPlay
+                          ? Icons.pause_circle_filled
+                          : Icons.play_circle_filled,
+                      key: ValueKey(isPlay),
+                      size: 34,
+                      color: isSel ? const Color(0xFF7C4DFF) : Colors.grey[400],
+                    ),
+                  ),
+                ],
+              ),
+        onTap: () => _onFileTap(item),
+        onLongPress: () => _onLongPress(item, isRec, isDl),
+      ),
+    );
+  }
+
+  Widget _buildAvatar(bool isRec, bool isSel, bool isPlay, bool isMSel) =>
+      AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: isSel && !isMSel
+              ? const LinearGradient(
+                  colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: isMSel
+              ? const Color(0xFF7C4DFF).withOpacity(0.15)
+              : isSel
+              ? null
+              : Colors.grey.withOpacity(0.1),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              isMSel
+                  ? Icons.check
+                  : isRec
+                  ? Icons.mic
+                  : Icons.music_note,
+              color: isSel || isMSel ? const Color(0xFF7C4DFF) : Colors.grey,
+              size: 22,
+            ),
+            if (isPlay)
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFF7C4DFF), width: 2),
+                ),
+              ),
+          ],
+        ),
+      );
+
+  Widget _buildEmptyState({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Future<void> Function() onRefresh,
+    required double emptyIconSz,
+    required double emptyTitleSz,
+    required double emptySubSz,
+    required EdgeInsets btnPad,
+  }) => Center(
+    child: SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: emptyIconSz * 1.2,
+            height: emptyIconSz * 1.2,
             decoration: BoxDecoration(
-              color: Theme.of(context).scaffoldBackgroundColor,
+              shape: BoxShape.circle,
+              color: const Color(0xFF7C4DFF).withOpacity(0.07),
+            ),
+            child: Icon(icon, size: emptyIconSz, color: Colors.grey[400]),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: emptyTitleSz,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey[600],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: emptySubSz, color: Colors.grey[500]),
+            ),
+          ),
+          const SizedBox(height: 28),
+          ElevatedButton.icon(
+            onPressed: onRefresh,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Refresh'),
+            style: ElevatedButton.styleFrom(
+              padding: btnPad,
+              backgroundColor: const Color(0xFF7C4DFF),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(30),
+              ),
+            ),
+          ),
+          const SizedBox(height: 100),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildPermissionDenied(
+    double sw,
+    double sh,
+    double eIS,
+    double eTiS,
+    double eSuS,
+    double iS,
+  ) => Center(
+    child: Padding(
+      padding: EdgeInsets.symmetric(horizontal: sw * 0.1),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.folder_open, size: eIS, color: Colors.grey[400]),
+          SizedBox(height: sh * 0.03),
+          Text(
+            'Permission Required',
+            style: TextStyle(fontSize: eTiS, fontWeight: FontWeight.bold),
+          ),
+          SizedBox(height: sh * 0.015),
+          Text(
+            'We need access to your audio files to play local music.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey, fontSize: eSuS),
+          ),
+          SizedBox(height: sh * 0.04),
+          ElevatedButton.icon(
+            onPressed: _checkAndRequestPermissions,
+            icon: Icon(Icons.security, size: iS * 0.8),
+            label: Text('Grant Permission', style: TextStyle(fontSize: eSuS)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blueGrey[900],
+              foregroundColor: Colors.white,
+              padding: EdgeInsets.symmetric(
+                horizontal: sw * 0.1,
+                vertical: sh * 0.02,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(sw * 0.075),
+              ),
+            ),
+          ),
+          SizedBox(height: sh * 0.02),
+          TextButton(
+            onPressed: openAppSettings,
+            child: Text('Open Settings', style: TextStyle(fontSize: eSuS)),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildMiniPlayer() => StreamBuilder<MediaItem?>(
+    stream: globalRadioAudioHandler.mediaItem,
+    builder: (context, snap) {
+      final mi = snap.data;
+      if (mi == null) return const SizedBox.shrink();
+      return StreamBuilder<PlaybackState>(
+        stream: globalRadioAudioHandler.playbackState,
+        builder: (context, ps) {
+          final playing = ps.data?.playing ?? false;
+          return Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(15),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black54,
+                  color: Colors.black.withOpacity(0.1),
                   blurRadius: 10,
-                  offset: Offset(0, 3),
+                  offset: const Offset(0, -2),
                 ),
               ],
             ),
             child: Row(
               children: [
-                // Album Art/Image
-                Padding(
-                  padding: EdgeInsets.all(cardPadding * 0.5),
-                  child: Hero(
-                    tag: 'album_art_${_currentSong!.id}',
-                    child: Container(
-                      width: albumArtSize * 1.5,
-                      height: albumArtSize * 1.5,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(screenWidth * 0.03),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(screenWidth * 0.03),
-                        child: FutureBuilder(
-                          future: _isCurrentListDownloadedMp3s
-                              ? TrackMetadataService.getTrackMetadata(
-                                  _currentSong!.data,
-                                )
-                              : Future.value(null),
-                          builder: (context, snapshot) {
-                            // Case 1: Downloaded MP3 → Use Hive cover
-                            if (_isCurrentListDownloadedMp3s) {
-                              final metadata = snapshot.data;
-
-                              if (metadata != null &&
-                                  metadata.coverPath != null &&
-                                  File(metadata.coverPath).existsSync()) {
-                                return Image.file(
-                                  File(metadata.coverPath),
-                                  width: albumArtSize,
-                                  height: albumArtSize,
-                                  fit: BoxFit.cover,
-                                );
-                              }
-
-                              return _buildPlaceholderArt(
-                                screenWidth,
-                                albumArtSize,
-                                false,
-                              );
-                            }
-
-                            // Case 2: Recording → Placeholder
-                            if (_isCurrentListRecordings) {
-                              return _buildPlaceholderArt(
-                                screenWidth,
-                                albumArtSize,
-                                true,
-                              );
-                            }
-
-                            // Case 3: MediaStore song → Use QueryArtworkWidget
-                            return QueryArtworkWidget(
-                              id: _currentSong!.id,
-                              type: ArtworkType.AUDIO,
-                              artworkFit: BoxFit.cover,
-                              nullArtworkWidget: _buildPlaceholderArt(
-                                screenWidth,
-                                albumArtSize,
-                                false,
-                              ),
-                            );
-                          },
-                        ),
-                      ),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    width: 45,
+                    height: 45,
+                    color: const Color(0xFF7C4DFF).withOpacity(0.1),
+                    child: const Icon(
+                      Icons.music_note,
+                      color: Color(0xFF7C4DFF),
                     ),
                   ),
                 ),
-
-                // Song Info
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.only(left: screenWidth * 0.02),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _currentSong!.title,
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            fontSize: titleFontSize,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        SizedBox(height: screenHeight * 0.005),
-                        Text(
-                          _currentSong!.artist ?? 'Unknown Artist',
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: subtitleFontSize,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        mi.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        mi.artist ?? 'Unknown Artist',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                      ),
+                    ],
                   ),
                 ),
-
-                // Controls
                 IconButton(
-                  icon: Icon(Icons.skip_previous, color: Colors.white),
-                  iconSize: controlIconSize,
-                  onPressed: _playPrevious,
+                  icon: Icon(playing ? Icons.pause_circle : Icons.play_circle),
+                  iconSize: 32,
+                  color: const Color(0xFF7C4DFF),
+                  onPressed: () => playing
+                      ? globalRadioAudioHandler.pause()
+                      : globalRadioAudioHandler.play(),
                 ),
                 IconButton(
-                  icon: Icon(
-                    playing ? Icons.pause : Icons.play_arrow,
-                    color: Colors.white,
-                  ),
-                  iconSize: controlIconSize * 1.2,
-                  onPressed: () {
-                    if (playing) {
-                      _mp3Player.pause();
-                    } else {
-                      _mp3Player.play();
-                    }
-                  },
-                ),
-                IconButton(
-                  icon: Icon(Icons.skip_next, color: Colors.white),
-                  iconSize: controlIconSize,
-                  onPressed: _playNext,
+                  icon: const Icon(Icons.close, size: 20),
+                  onPressed: () => globalRadioAudioHandler.stop(),
                 ),
               ],
             ),
-          ),
-        );
-      },
-    );
-  }
+          );
+        },
+      );
+    },
+  );
+}
 
-  Widget _buildPlayerSheet() {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    final albumArtSize = screenWidth * 0.75;
-    final titleFontSize = screenWidth * 0.06;
-    final subtitleFontSize = screenWidth * 0.045;
-    final controlIconSize = screenWidth * 0.15;
-    final loopIconSize = screenWidth * 0.07;
-    final sliderHeight = screenHeight * 0.05;
+// ── Small chip label ──────────────────────────────────────────────────────────
+class _Chip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
 
-    return DraggableScrollableSheet(
-      initialChildSize: 1.0,
-      minChildSize: 0.5,
-      maxChildSize: 1.0,
-      builder: (_, controller) {
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.blueGrey[900],
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(screenWidth * 0.08),
-            ),
-          ),
-          child: ListView(
-            controller: controller,
-            children: [
-              // Drag handle
-              Center(
-                child: Container(
-                  width: screenWidth * 0.15,
-                  height: screenHeight * 0.005,
-                  margin: EdgeInsets.symmetric(vertical: screenHeight * 0.02),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[600],
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                ),
-              ),
-
-              // Album Art
-              Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: screenWidth * 0.125,
-                  vertical: screenHeight * 0.02,
-                ),
-                child: Hero(
-                  tag: 'album_art_${_currentSong!.id}',
-                  child: Container(
-                    width: albumArtSize,
-                    height: albumArtSize,
-                    decoration: BoxDecoration(
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black54,
-                          blurRadius: 10,
-                          offset: Offset(0, 5),
-                        ),
-                      ],
-                      borderRadius: BorderRadius.circular(screenWidth * 0.05),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(screenWidth * 0.05),
-                      child: FutureBuilder(
-                        future: _isCurrentListDownloadedMp3s
-                            ? TrackMetadataService.getTrackMetadata(
-                                _currentSong!.data,
-                              )
-                            : Future.value(null),
-                        builder: (context, snapshot) {
-                          // Case 1: Downloaded MP3 → Use Hive cover
-                          if (_isCurrentListDownloadedMp3s) {
-                            final metadata = snapshot.data;
-
-                            if (metadata != null &&
-                                metadata.coverPath != null &&
-                                File(metadata.coverPath).existsSync()) {
-                              return Image.file(
-                                File(metadata.coverPath),
-                                width: albumArtSize,
-                                height: albumArtSize,
-                                fit: BoxFit.cover,
-                              );
-                            }
-
-                            return _buildPlaceholderArt(
-                              screenWidth,
-                              albumArtSize,
-                              false,
-                            );
-                          }
-
-                          // Case 2: Recording → Placeholder
-                          if (_isCurrentListRecordings) {
-                            return _buildPlaceholderArt(
-                              screenWidth,
-                              albumArtSize,
-                              true,
-                            );
-                          }
-
-                          // Case 3: MediaStore song → Use QueryArtworkWidget
-                          return QueryArtworkWidget(
-                            id: _currentSong!.id,
-                            type: ArtworkType.AUDIO,
-                            artworkFit: BoxFit.cover,
-                            nullArtworkWidget: _buildPlaceholderArt(
-                              screenWidth,
-                              albumArtSize,
-                              false,
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // Song Info
-              Padding(
-                padding: EdgeInsets.only(
-                  top: screenHeight * 0.03,
-                  bottom: screenHeight * 0.01,
-                  left: screenWidth * 0.05,
-                  right: screenWidth * 0.05,
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      _currentSong!.title,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: titleFontSize,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: screenHeight * 0.01),
-                    Text(
-                      _currentSong!.artist ?? 'Unknown Artist',
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: subtitleFontSize,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Seek Slider
-              StreamBuilder<Duration?>(
-                stream: _mp3Player.durationStream,
-                builder: (context, durationSnapshot) {
-                  final totalDuration = durationSnapshot.data ?? Duration.zero;
-                  return StreamBuilder<Duration>(
-                    stream: _mp3Player.positionStream,
-                    builder: (context, positionSnapshot) {
-                      var position = positionSnapshot.data ?? Duration.zero;
-                      if (position > totalDuration) {
-                        position = totalDuration;
-                      }
-
-                      return Column(
-                        children: [
-                          SliderTheme(
-                            data: SliderTheme.of(context).copyWith(
-                              activeTrackColor: Colors.white,
-                              inactiveTrackColor: Colors.white30,
-                              thumbColor: Colors.white,
-                              overlayColor: Colors.white10,
-                              trackHeight: 4.0,
-                            ),
-                            child: SizedBox(
-                              height: sliderHeight,
-                              child: Slider(
-                                min: 0.0,
-                                max: totalDuration.inMilliseconds.toDouble(),
-                                value: position.inMilliseconds.toDouble(),
-                                onChanged: (value) {
-                                  _mp3Player.seek(
-                                    Duration(milliseconds: value.round()),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                          Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: screenWidth * 0.1,
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  _formatDuration(position),
-                                  style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: subtitleFontSize * 0.8,
-                                  ),
-                                ),
-                                Text(
-                                  _formatDuration(totalDuration),
-                                  style: TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: subtitleFontSize * 0.8,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-
-              // Controls
-              Padding(
-                padding: EdgeInsets.symmetric(vertical: screenHeight * 0.02),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    // Loop Mode Button
-                    IconButton(
-                      icon: Icon(
-                        _loopMode == LoopMode.off
-                            ? Icons.repeat
-                            : _loopMode == LoopMode.one
-                            ? Icons.repeat_one
-                            : Icons.repeat_on,
-                        color: _loopMode == LoopMode.off
-                            ? Colors.white.withOpacity(0.5)
-                            : Colors.white,
-                      ),
-                      iconSize: loopIconSize,
-                      onPressed: _toggleLoopMode,
-                    ),
-                    // Previous Button
-                    IconButton(
-                      icon: Icon(Icons.skip_previous, color: Colors.white),
-                      iconSize: controlIconSize,
-                      onPressed: _playPrevious,
-                    ),
-                    // Play/Pause Button
-                    StreamBuilder<PlayerState>(
-                      stream: _mp3Player.playerStateStream,
-                      builder: (context, snapshot) {
-                        final playing = snapshot.data?.playing ?? false;
-                        return Container(
-                          width: controlIconSize * 1.2,
-                          height: controlIconSize * 1.2,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black54,
-                                blurRadius: 10,
-                                offset: Offset(0, 5),
-                              ),
-                            ],
-                          ),
-                          child: IconButton(
-                            icon: Icon(
-                              playing ? Icons.pause : Icons.play_arrow,
-                              color: Colors.blueGrey[900],
-                            ),
-                            iconSize: controlIconSize * 0.7,
-                            onPressed: () {
-                              if (playing) {
-                                _mp3Player.pause();
-                              } else {
-                                _mp3Player.play();
-                              }
-                            },
-                          ),
-                        );
-                      },
-                    ),
-                    // Next Button
-                    IconButton(
-                      icon: Icon(Icons.skip_next, color: Colors.white),
-                      iconSize: controlIconSize,
-                      onPressed: _playNext,
-                    ),
-                    // More Options (Placeholder)
-                    IconButton(
-                      icon: Icon(
-                        Icons.more_horiz,
-                        color: Colors.white.withOpacity(0.5),
-                      ),
-                      iconSize: loopIconSize,
-                      onPressed: () {
-                        // TODO: Implement more options like delete for recordings
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('More options coming soon!')),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // 💡 NEW: Unified file sharing
-  Future<void> _shareFile(dynamic file) async {
-    try {
-      String filePath;
-      String title;
-
-      if (file is RecordingFile) {
-        filePath = file.path;
-        title = file.title;
-      } else if (file is DownloadedMp3File) {
-        filePath = file.path;
-        title = file.title;
-      } else {
-        return;
-      }
-
-      final fileObj = File(filePath);
-      if (await fileObj.exists()) {
-        await Share.shareXFiles([
-          XFile(filePath),
-        ], subject: 'Check out: $title');
-      } else {
-        _showSnackBar("Error: File not found for sharing.");
-      }
-    } catch (e) {
-      print("Error sharing file: $e");
-      _showSnackBar("Error initiating share action.");
-      _analyticsService.logActivity(deviceId!, "Error sharing file: $e");
-    }
-  }
-
-  // 💡 UPDATED: Unified delete confirmation
-  Future<void> _confirmAndDelete(dynamic file, bool isRecording) async {
-    final bool? shouldDelete = await showDialog<bool>(
-      context: context,
-      builder: (BuildContext context) {
-        final fileName = isRecording
-            ? (file as RecordingFile).title
-            : (file as DownloadedMp3File).title;
-        return AlertDialog(
-          title: const Text('Confirm Deletion'),
-          content: Text(
-            'Are you sure you want to delete "$fileName"? This cannot be undone.',
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () => Navigator.of(context).pop(false),
-            ),
-            TextButton(
-              child: const Text('DELETE', style: TextStyle(color: Colors.red)),
-              onPressed: () => Navigator.of(context).pop(true),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (shouldDelete == true) {
-      _deleteFile(file, isRecording);
-    }
-  }
-
-  // 💡 UPDATED: Unified file deletion
-  Future<void> _deleteFile(dynamic file, bool isRecording) async {
-    try {
-      String filePath;
-      String title;
-
-      if (isRecording && file is RecordingFile) {
-        filePath = file.path;
-        title = file.title;
-      } else if (file is DownloadedMp3File) {
-        filePath = file.path;
-        title = file.title;
-      } else {
-        return;
-      }
-
-      final fileObj = File(filePath);
-      if (await fileObj.exists()) {
-        // Stop playback if this file is currently playing
-        if ((_isCurrentListRecordings && isRecording) ||
-            (_isCurrentListDownloadedMp3s && !isRecording)) {
-          if (_currentSong?.data == filePath) {
-            await _mp3Player.stop();
-            setState(() {
-              _currentSong = null;
-              _currentIndex = -1;
-            });
-          }
-        }
-
-        await fileObj.delete();
-        _showSnackBar("'$title' deleted successfully.");
-
-        // Reload the appropriate list
-        if (isRecording) {
-          _loadLocalRecordings();
-        } else {
-          _loadDownloadedMp3s();
-        }
-      } else {
-        _showSnackBar("Error: File not found at path.");
-      }
-    } catch (e) {
-      print("Error deleting file: $e");
-      _analyticsService.logActivity(deviceId!, "Error deleting file: $e");
-      _showSnackBar("Error deleting file.");
-    }
-  }
+  const _Chip({required this.label, required this.icon, required this.color});
 
   @override
-  Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-
-    final appBarFontSize = screenWidth * 0.06;
-    final iconSize = screenWidth * 0.06;
-    final emptyIconSize = screenWidth * 0.2;
-    final emptyTitleSize = screenWidth * 0.055;
-    final emptySubtitleSize = screenWidth * 0.04;
-    final buttonPadding = screenWidth * 0.08;
-    final cardMargin = screenWidth * 0.03;
-
-    return DefaultTabController(
-      length: 3, // Updated to 3 tabs
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            'MP3 Player',
-            style: TextStyle(
-              fontSize: appBarFontSize,
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFF7B1FA2), // Deep Purple
-                  Color(0xFFBA68C8), // Light Purple
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-          ),
-          backgroundColor: Colors.blueGrey[900],
-          elevation: 0,
-          actions: [
-            IconButton(
-              icon: Icon(Icons.refresh, color: Colors.white),
-              iconSize: iconSize,
-              onPressed: () {
-                if (_hasPermission) {
-                  _loadSongs(); // Reloads all three lists
-                } else {
-                  _checkAndRequestPermissions();
-                }
-              },
-            ),
-          ],
-          bottom: TabBar(
-            indicatorColor: Colors.white,
-            labelColor: Colors.white,
-            unselectedLabelColor: Colors.white.withOpacity(0.7),
-            labelStyle: TextStyle(
-              fontSize: screenWidth * 0.045,
-              fontWeight: FontWeight.bold,
-            ),
-            tabs: const [
-              Tab(text: 'All Songs'),
-              Tab(text: 'Downloaded MP3s'), // New tab
-              Tab(text: 'Recordings'),
-            ],
-            controller: _tabController,
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.1),
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 10, color: color.withOpacity(0.8)),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: color.withOpacity(0.9),
+            fontWeight: FontWeight.w500,
           ),
         ),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        body: _isCheckingPermission
-            ? const Center(child: CircularProgressIndicator())
-            : !_hasPermission
-            ? _buildPermissionDenied(
-                screenWidth,
-                screenHeight,
-                emptyIconSize,
-                emptyTitleSize,
-                emptySubtitleSize,
-                buttonPadding,
-                iconSize,
-              )
-            : Column(
-                children: [
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        // 1. All Songs Tab (MediaStore)
-                        _buildSongList(
-                          list: _songs,
-                          isRecordingList: false,
-                          isDownloadedMp3List: false,
-                          emptyIcon: Icons.music_off,
-                          emptyTitle: 'No MP3 files found',
-                          emptySubtitle: 'Add some music files to your device',
-                          onRefresh: _loadAllSongs,
-                          screenWidth: screenWidth,
-                          screenHeight: screenHeight,
-                          cardMargin: cardMargin,
-                          emptyIconSize: emptyIconSize,
-                          emptyTitleSize: emptyTitleSize,
-                          emptySubtitleSize: emptySubtitleSize,
-                          buttonPadding: buttonPadding,
-                          iconSize: iconSize,
-                        ),
-                        // 2. Downloaded MP3s Tab (Music folder)
-                        _buildSongList(
-                          list: _downloadedMp3s,
-                          isRecordingList: false,
-                          isDownloadedMp3List: true,
-                          emptyIcon: Icons.download,
-                          emptyTitle: 'No Downloaded MP3s',
-                          emptySubtitle:
-                              'MP3s downloaded from Old MP3 browser will appear here',
-                          onRefresh: _loadDownloadedMp3s,
-                          screenWidth: screenWidth,
-                          screenHeight: screenHeight,
-                          cardMargin: cardMargin,
-                          emptyIconSize: emptyIconSize,
-                          emptyTitleSize: emptyTitleSize,
-                          emptySubtitleSize: emptySubtitleSize,
-                          buttonPadding: buttonPadding,
-                          iconSize: iconSize,
-                        ),
-                        // 3. Recordings Tab
-                        _buildSongList(
-                          list: _recordings,
-                          isRecordingList: true,
-                          isDownloadedMp3List: false,
-                          emptyIcon: Icons.mic_off,
-                          emptyTitle: 'No Recordings Found',
-                          emptySubtitle:
-                              'Recordings will appear here after being saved.',
-                          onRefresh: _loadLocalRecordings,
-                          screenWidth: screenWidth,
-                          screenHeight: screenHeight,
-                          cardMargin: cardMargin,
-                          emptyIconSize: emptyIconSize,
-                          emptyTitleSize: emptyTitleSize,
-                          emptySubtitleSize: emptySubtitleSize,
-                          buttonPadding: buttonPadding,
-                          iconSize: iconSize,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (globalAdsEnabled)
-                    Container(
-                      alignment: Alignment.center,
-                      height:
-                          60, // A guaranteed height (50px is standard, use 60px for safety)
-                      child: const BannerAdWidget(),
-                    ),
-                  if (_currentSong != null && !_isPlayerExpanded)
-                    _buildMiniPlayer(),
-                ],
-              ),
-      ),
-    );
-  }
+      ],
+    ),
+  );
 }

@@ -1,13 +1,14 @@
 // radio_station_service.dart
 import 'dart:convert';
 
+import 'package:grradio/Env.dart';
 import 'package:hive_flutter/hive_flutter.dart'; // Import Hive
 import 'package:http/http.dart' as http; // Use the http package
 
 import 'radiostation.dart';
 
 // IMPORTANT: Use your deployed Render URL here.
-const String _baseUrl = 'https://radio-backend-nysq.onrender.com';
+String _baseUrl = Env.apiBaseUrl;
 const String _apiEndpoint = '/stations';
 const String _boxName = 'stationsBox';
 

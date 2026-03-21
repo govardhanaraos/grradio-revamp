@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -10,42 +13,64 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:grradio/Env.dart';
+import 'package:grradio/ads/ad_config_provider.dart';
 import 'package:grradio/api/analytics_service_api.dart';
 import 'package:grradio/data/track_metadata.dart';
 import 'package:grradio/handler/mp3playerhandler.dart';
 import 'package:grradio/more/more.dart';
 import 'package:grradio/more/notificationservice.dart';
-import 'package:grradio/more/securestorage/deviceidsecurestorage.dart';
 import 'package:grradio/more/theme_provider.dart';
-import 'package:grradio/mp3download/mp3downloadscreen.dart'; // Add this import
+import 'package:grradio/mp3download/mp3downloadscreen.dart';
 import 'package:grradio/mp3playerscreen.dart';
 import 'package:grradio/radiostation.dart';
 import 'package:grradio/radiostationserviceapi.dart';
+import 'package:grradio/splash_animation_screen.dart';
 import 'package:grradio/util/radio_handler_mobile.dart';
 import 'package:grradio/util/screens/radioplayerscreen_mobile.dart';
+import 'package:grradio/widgets/expanded_player_content.dart';
+import 'package:grradio/widgets/mini_player_tile.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:http/http.dart' as http; // Use the http package
+import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sliding_up_panel/sliding_up_panel.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+// --- SSL CERTIFICATE OVERRIDE ---
+class MyHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      ..badCertificateCallback =
+          (X509Certificate cert, String host, int port) => true;
+  }
+}
 
 final RadioStationServiceAPI _radioService = RadioStationServiceAPI();
 final ValueNotifier<List<RadioStation>> stationsNotifier = ValueNotifier([]);
+final ValueNotifier<bool> stationsLoadingComplete = ValueNotifier(false);
 final AnalyticsServiceAPI _analyticsService = AnalyticsServiceAPI();
+
+/// Global ad-config provider — initialised in main(), available app-wide.
+late final AdConfigProvider adConfigProvider;
+
+/// Legacy top-level flag kept for any existing call-sites.
+/// Prefer reading from [adConfigProvider] in new code.
 bool globalAdsEnabled = false;
 String? deviceId;
 
 List<RadioStation> get allRadioStations => stationsNotifier.value;
 
-const int limitPerPage = 50; // Use a consistent limit
+const int limitPerPage = 50;
 bool _isInitializing = false;
 final _storage = const FlutterSecureStorage();
 final ValueNotifier<bool> isPremiumUser = ValueNotifier(false);
 
 Future<void> initializeApp() async {
-  // 1. Init Hive
   if (_isInitializing) {
     await _analyticsService.logActivity(
       deviceId ?? "unknown-device",
@@ -60,24 +85,19 @@ Future<void> initializeApp() async {
   _isInitializing = true;
 
   await Hive.initFlutter();
-  Hive.registerAdapter(RadioStationAdapter()); // Generated adapter
+  Hive.registerAdapter(RadioStationAdapter());
   Hive.registerAdapter(TrackMetadataAdapter());
 
   final cachedStationsBox = await Hive.openBox<RadioStation>('cachedStations');
-  final cachedTracksBox = await Hive.openBox<TrackMetadata>('tracks'); // NEW
+  await Hive.openBox<TrackMetadata>('tracks');
   final List<RadioStation> initialStations = cachedStationsBox.values.toList();
   stationsNotifier.value = initialStations;
-
-  // 3. Start background refresh (non-blocking)
-  // 💡 The loadStations is called only once here.
-  _loadStationsInBackground(cachedStationsBox);
 }
 
 Future<String> _getPersistentDeviceId() async {
   String? id = await _storage.read(key: 'unique_device_id');
   if (id == null) {
-    // If no ID exists, create one and save it permanently
-    id = await _getDeviceId(); // Use your existing method once to get a base
+    id = await _getDeviceId();
     await _storage.write(key: 'unique_device_id', value: id);
   }
   return id;
@@ -89,17 +109,55 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 }
 
 Future<void> initializeRevenueCat() async {
-  // Platform-specific API keys
   String apiKey;
-  if (Platform.isIOS) {
-    apiKey = 'test_EWJndZnjbUWEyVNJYEKSuRLKyBS';
-  } else if (Platform.isAndroid) {
-    apiKey = 'test_EWJndZnjbUWEyVNJYEKSuRLKyBS';
+  if (Env.environment == 'production') {
+    if (Platform.isIOS) {
+      apiKey = 'sk_CPpSAxwIVwwXPBizbMGkpdAMBJaan';
+    } else if (Platform.isAndroid) {
+      apiKey = 'sk_CPpSAxwIVwwXPBizbMGkpdAMBJaan';
+    } else {
+      throw UnsupportedError('Platform not supported');
+    }
   } else {
-    throw UnsupportedError('Platform not supported');
+    if (Platform.isIOS) {
+      apiKey = 'test_EWJndZnjbUWEyVNJYEKSuRLKyBS';
+    } else if (Platform.isAndroid) {
+      apiKey = 'test_EWJndZnjbUWEyVNJYEKSuRLKyBS';
+    } else {
+      throw UnsupportedError('Platform not supported');
+    }
   }
 
   await Purchases.configure(PurchasesConfiguration(apiKey));
+
+  Purchases.addCustomerInfoUpdateListener((customerInfo) async {
+    await _updateStatusFromCustomerInfo(customerInfo);
+    // Propagate premium status change into the ad config provider.
+    try {
+      await adConfigProvider.updatePremiumStatus(isPremiumUser.value);
+    } catch (e) {
+      print('adConfigProvider not yet initialized: $e');
+    }
+  });
+}
+
+Future<void> updatePremiumStatus() async {
+  try {
+    CustomerInfo customerInfo = await Purchases.getCustomerInfo();
+    await _updateStatusFromCustomerInfo(customerInfo);
+  } catch (e) {
+    print("Error fetching customer info: $e");
+  }
+}
+
+Future<void> _updateStatusFromCustomerInfo(CustomerInfo customerInfo) async {
+  final bool isEntitled =
+      customerInfo.entitlements.all['premium']?.isActive ?? false;
+
+  isPremiumUser.value = isEntitled;
+
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setBool('is_premium', isEntitled);
 }
 
 Future<String> _getDeviceId() async {
@@ -126,10 +184,8 @@ bool isNewerVersion(String current, String latest) {
 }
 
 Future<Map<String, dynamic>> fetchAppConfig() async {
-  final url = Uri.parse("https://radio-backend-nysq.onrender.com/appconfig");
-
+  final url = Uri.parse("${Env.apiBaseUrl}/appconfig");
   final response = await http.get(url);
-
   if (response.statusCode == 200) {
     return jsonDecode(response.body)["config"];
   } else {
@@ -137,9 +193,19 @@ Future<Map<String, dynamic>> fetchAppConfig() async {
   }
 }
 
+Future<void> setupNotificationSubscription() async {
+  final prefs = await SharedPreferences.getInstance();
+  bool isEnabled = prefs.getBool('notifications_enabled') ?? true;
+
+  if (isEnabled) {
+    await FirebaseMessaging.instance.subscribeToTopic('radio_alerts');
+  } else {
+    await FirebaseMessaging.instance.unsubscribeFromTopic('radio_alerts');
+  }
+}
+
 void checkForUpdate(BuildContext context) async {
   final config = await fetchAppConfig();
-
   bool updateEnabled = config["app_update_enabled"] == "true";
   String latestVersion = config["app_update_version"] ?? "0.0.0";
   String updateUrl = config["app_update_url"] ?? "";
@@ -180,86 +246,43 @@ Future<void> _loadStationsInBackground(Box<RadioStation> box) async {
   int currentPage = 1;
   bool hasMore = true;
 
-  print('Starting full station refresh in background...');
-  _analyticsService.logActivity(
-    deviceId ?? "unknown-device",
-    "Starting full station refresh in background...",
-  );
-
   try {
     while (hasMore) {
       final stations = await _radioService.fetchRadioStations(
         page: currentPage,
         limit: limitPerPage,
       );
-
       mergedStations.addAll(stations);
-
-      print('Loaded Stations page $currentPage: ${stations.length} items');
-      _analyticsService.logActivity(
-        deviceId ?? "unknown-device",
-        "Loaded Stations page $currentPage: ${stations.length} items",
-      );
-
+      // Fire per-page so RadioPlayerScreen can render progressively.
+      // Use a new list copy so ValueNotifier detects the change.
+      stationsNotifier.value = List.unmodifiable(mergedStations);
       if (stations.length < limitPerPage) {
         hasMore = false;
       }
       currentPage++;
     }
-
-    // Update global list and cache only if the fetch was successful
-    stationsNotifier.value = mergedStations;
+    // Mark all pages complete — triggers final ad injection in the screen.
+    stationsLoadingComplete.value = true;
     await box.clear();
     await box.addAll(mergedStations);
-
-    print(
-      '✅ Background load complete. Total stations: ${allRadioStations.length}',
-    );
-    _analyticsService.logActivity(
-      deviceId ?? "unknown-device",
-      "✅ Background load complete. Total stations: ${allRadioStations.length}",
-    );
   } catch (e) {
     print('Background station refresh failed: $e');
-    _analyticsService.logActivity(
-      deviceId ?? "unknown-device",
-      "Background station refresh failed: $e",
-    );
   }
 }
 
 Future<void> syncRemoteStations() async {
   try {
-    print('🔄 Fetching fresh data from API...');
-    _analyticsService.logActivity(
-      deviceId ?? "unknown-device",
-      "🔄 Fetching fresh data from API...",
-    );
-
-    // Fetch Page 1
     final firstPage = await _radioService.fetchRadioStations(
       page: 1,
       limit: limitPerPage,
     );
-
     if (firstPage.isNotEmpty) {
-      // Update the UI with fresh data
+      stationsLoadingComplete.value = false;
       stationsNotifier.value = firstPage;
-      print("✅ UI Updated with ${firstPage.length} fresh stations.");
-      _analyticsService.logActivity(
-        deviceId ?? "unknown-device",
-        "✅ UI Updated with ${firstPage.length} fresh stations.",
-      );
-
-      // Kick off background loading for the rest
       _loadRemainingStationsInBackground();
     }
   } catch (e) {
     print("❌ API failed, user is using cached data.");
-    _analyticsService.logActivity(
-      deviceId ?? "unknown-device",
-      "❌ API failed, user is using cached data.",
-    );
   }
 }
 
@@ -267,52 +290,36 @@ void _loadRemainingStationsInBackground() {
   Future.microtask(() async {
     int currentPage = 2;
     bool hasMore = true;
-    List<RadioStation> backgroundStations = [];
-
     while (hasMore) {
       final stations = await _radioService.fetchRadioStations(
         page: currentPage,
         limit: limitPerPage,
       );
-
       if (stations.isNotEmpty) {
-        backgroundStations.addAll(stations);
+        // Merge with current list and fire per-page for progressive rendering.
+        final current = stationsNotifier.value;
+        final merged = [...current, ...stations];
+        final unique = {for (var s in merged) s.id: s}.values.toList();
+        stationsNotifier.value = List.unmodifiable(unique);
         currentPage++;
-        if (stations.length < limitPerPage) {
-          hasMore = false;
-        }
+        if (stations.length < limitPerPage) hasMore = false;
       } else {
         hasMore = false;
       }
     }
+    // All pages done — triggers final ad injection in the screen.
+    stationsLoadingComplete.value = true;
 
-    // 3. Merge the background data back into the main list when done
-    if (backgroundStations.isNotEmpty) {
-      final current = stationsNotifier.value;
-      final merged = [...current, ...backgroundStations];
-
-      // Deduplicate by id
-      final uniqueStations = {for (var s in merged) s.id: s}.values.toList();
-
-      stationsNotifier.value = uniqueStations;
-
-      print(
-        '✅ Background load complete. Total stations: ${stationsNotifier.value.length}',
-      );
-      _analyticsService.logActivity(
-        deviceId ?? "unknown-device",
-        "✅ Background load complete. Total stations: ${stationsNotifier.value.length}",
-      );
-    }
+    final box = await Hive.openBox<RadioStation>('cachedStations');
+    await box.clear();
+    await box.addAll(stationsNotifier.value);
   });
 }
 
-// Global audio handlers
 late dynamic globalRadioAudioHandler;
 late AudioPlayer globalMp3Player;
 late Mp3PlayerHandler globalMp3QueueService;
 
-// Audio coordination functions
 void pauseRadioIfPlaying() {
   if (globalRadioAudioHandler.playbackState.value.playing) {
     globalRadioAudioHandler.pause();
@@ -320,32 +327,14 @@ void pauseRadioIfPlaying() {
 }
 
 void pauseMp3IfPlaying() {
-  print('globalMp3Player.playing: ${globalMp3Player.playing}');
-  _analyticsService.logActivity(
-    deviceId ?? "unknown-device",
-    "globalMp3Player.playing: ${globalMp3Player.playing}",
-  );
-
-  print('inside pauseMp3IfPlaying (Forcing Stop)');
   try {
     globalMp3Player.stop();
-    print('globalMp3Player successfully stopped.');
-    _analyticsService.logActivity(
-      deviceId ?? "unknown-device",
-      "globalMp3Player successfully stopped.",
-    );
   } catch (e) {
-    // Include error handling just in case, though stop() is usually safe.
     print('Error attempting to stop globalMp3Player: $e');
-    _analyticsService.logActivity(
-      deviceId ?? "unknown-device",
-      "Error attempting to stop globalMp3Player: $e",
-    );
   }
 }
 
 void setupAudioSession() async {
-  //if (kIsWeb) return; // Web has no AVAudioSession; skip
   final session = await AudioSession.instance;
   await session.configure(
     const AudioSessionConfiguration(
@@ -362,15 +351,7 @@ void setupAudioSession() async {
 Future<void> _initAudioHandlers() async {
   setupAudioSession();
   globalMp3Player = AudioPlayer();
-  // print('kIsWeb : $kIsWeb');
 
-  /*  if (kIsWeb) {
-  // ✅ Web: instantiate directly, no AudioService
-  globalRadioAudioHandler = handler.RadioPlayerHandler(
-    stations: allRadioStations,
-  );
-  } else {*/
-  // ✅ Mobile: wrap in AudioService
   globalRadioAudioHandler = await AudioService.init(
     builder: () => RadioHandlerImpl(stations: allRadioStations),
     config: const AudioServiceConfig(
@@ -378,162 +359,131 @@ Future<void> _initAudioHandlers() async {
       androidNotificationChannelName: 'Radio Streaming',
       androidNotificationChannelDescription:
           'Audio playback for internet radio',
-      androidNotificationOngoing: true,
-      androidStopForegroundOnPause: true,
+      androidNotificationOngoing: false,
+      androidStopForegroundOnPause: false,
       preloadArtwork: true,
+      androidNotificationIcon: 'mipmap/ic_launcher',
+      androidResumeOnClick: true,
+      androidNotificationClickStartsActivity: true,
     ),
   );
-  // }
+
+  stationsNotifier.addListener(() {
+    globalRadioAudioHandler.setStations(stationsNotifier.value);
+  });
 
   globalMp3QueueService = await Mp3PlayerHandler();
   globalMp3QueueService.init();
 }
 
 void _initializeAdsDelayed() {
-  /*if (kIsWeb) {
-    print('Skipping Google Mobile Ads initialization on Web');
-    return;
-  }*/
-
-  // Use Future.microtask to ensure this runs immediately after the current event loop finishes,
-  // which is after the app has started running (i.e., after runApp()).
   Future.microtask(() async {
     try {
       await MobileAds.instance.initialize();
-      print('✅ Google Mobile Ads initialized successfully (Delayed)');
-      _analyticsService.logActivity(
-        deviceId ?? "unknown-device",
-        "✅ Google Mobile Ads initialized successfully (Delayed)",
-      );
     } catch (e) {
       print('❌ Failed to initialize Google Mobile Ads (Delayed): $e');
-      _analyticsService.logActivity(
-        deviceId ?? "unknown-device",
-        "❌ Failed to initialize Google Mobile Ads (Delayed): $e",
-      );
     }
   });
 }
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  HttpOverrides.global = MyHttpOverrides();
 
+  WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
   isPremiumUser.value = prefs.getBool('is_premium') ?? false;
-
   deviceId = await _getPersistentDeviceId();
-
   await initializeApp();
-
   await Firebase.initializeApp();
-
   NotificationService notificationService = NotificationService();
-  // Set the background handler
   await notificationService.initNotifications();
-  // Initialize audio service for radio
   await _initAudioHandlers();
 
-  if (!isPremiumUser.value) {
-    globalAdsEnabled = await _analyticsService.fetchGlobalAdsEnabled();
-  } else {
-    globalAdsEnabled = false; // Disable ads for premium users
-  }
+  adConfigProvider = AdConfigProvider(_analyticsService);
+  await adConfigProvider.initialize(isPremiumUser: isPremiumUser.value);
+  globalAdsEnabled = adConfigProvider.globalAdsEnabled;
 
-  // --- REVENUECAT INITIALIZATION ---
   await Purchases.setLogLevel(LogLevel.debug);
-  if (Platform.isAndroid) {
-    //initializeRevenueCat();
-  }
+  await initializeRevenueCat();
+  await updatePremiumStatus();
 
   await _analyticsService.registerDevice(
     deviceId ?? "unknown-device",
     platform: Platform.operatingSystem,
   );
 
-  globalAdsEnabled = await _analyticsService.fetchGlobalAdsEnabled();
-  print("Global ads enabled: $globalAdsEnabled");
-  _analyticsService.logActivity(
-    deviceId ?? "unknown-device",
-    "Global ads enabled: $globalAdsEnabled",
-  );
+  // Boot AdMob SDK only if ads are actually enabled.
+  if (adConfigProvider.globalAdsEnabled) _initializeAdsDelayed();
 
   runApp(
-    ChangeNotifierProvider(create: (_) => ThemeProvider(), child: RadioApp()),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        // Provide the already-initialised instance — no create needed.
+        ChangeNotifierProvider<AdConfigProvider>.value(value: adConfigProvider),
+      ],
+      child: RadioApp(),
+    ),
   );
 
-  if (!isUserPremium.value) {
-    globalAdsEnabled = await _analyticsService.fetchGlobalAdsEnabled();
-    if (globalAdsEnabled) {
-      _initializeAdsDelayed();
-    }
-  } else {
-    globalAdsEnabled = false;
-  }
+  setupNotificationSubscription();
   syncRemoteStations();
-  //  _loadRemainingStationsInBackground();
 }
 
 class RadioApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
+    const brandViolet = Color(0xFF7C4DFF);
+    const brandBlue = Color(0xFF448AFF);
 
     return MaterialApp(
       title: 'GR Radio',
       theme: ThemeData(
         brightness: Brightness.light,
         useMaterial3: true,
+        primaryColor: brandViolet,
         scaffoldBackgroundColor: Colors.grey.shade50,
-        cardColor: Colors.white,
-        appBarTheme: AppBarTheme(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          iconTheme: IconThemeData(color: Colors.blueGrey.shade800),
-          titleTextStyle: TextStyle(
-            color: Colors.blueGrey.shade800,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
+        colorScheme: const ColorScheme.light(
+          primary: brandViolet,
+          secondary: brandBlue,
         ),
-        bottomNavigationBarTheme: BottomNavigationBarThemeData(
-          backgroundColor: themeProvider.isDarkMode
-              ? Colors.black
-              : Colors.white,
-
-          elevation: 20,
-          selectedLabelStyle: const TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 12,
-          ),
-          unselectedLabelStyle: const TextStyle(
-            fontWeight: FontWeight.w500,
-            fontSize: 11,
+        appBarTheme: AppBarTheme(
+          backgroundColor: Colors.white.withOpacity(0.8),
+          elevation: 0,
+          titleTextStyle: const TextStyle(
+            color: Colors.black,
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
           ),
         ),
       ),
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         useMaterial3: true,
-        scaffoldBackgroundColor: Colors.black,
-        cardColor: Colors.grey.shade900,
-        appBarTheme: AppBarTheme(
-          backgroundColor: Colors.grey.shade900,
+        primaryColor: brandViolet,
+        scaffoldBackgroundColor: const Color(0xFF121212),
+        cardColor: const Color(0xFF1E1E1E),
+        colorScheme: const ColorScheme.dark(
+          primary: brandViolet,
+          secondary: brandBlue,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.transparent,
           elevation: 0,
-          iconTheme: IconThemeData(color: Colors.white),
           titleTextStyle: TextStyle(
             color: Colors.white,
-            fontSize: 20,
+            fontSize: 22,
             fontWeight: FontWeight.bold,
           ),
         ),
       ),
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
-      home: MainNavigator(),
+      home: AnimatedSplashScreen(),
     );
   }
 }
 
-// 💡 NEW: Main Navigator Widget to handle Bottom Navigation Bar
 class MainNavigator extends StatefulWidget {
   @override
   _MainNavigatorState createState() => _MainNavigatorState();
@@ -542,26 +492,169 @@ class MainNavigator extends StatefulWidget {
 class _MainNavigatorState extends State<MainNavigator> {
   int _selectedIndex = 0;
   int _previousIndex = 0;
-
   int _mp3SubTabIndex = 0;
   bool _isRecording = false;
+  bool _isPanelOpen = false;
+  final PanelController _panelController = PanelController();
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
+  bool _isDialogShowing = false;
 
-  // NEW: Function to navigate directly to the MP3 Recordings tab (Sub-tab 1)
+  StreamSubscription? _customEventSub;
+
   void _navigateToMp3RecordingsTab() {
     if (_isRecording) return;
     setState(() {
-      _mp3SubTabIndex = 2; // Set to Recordings tab
-      _selectedIndex = 1; // Switch to the MP3 Player main tab
+      _mp3SubTabIndex = 2;
+      _selectedIndex = 1;
     });
   }
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(() {
+    _checkInitialConnection();
+
+    // 2. Real-time listener for status changes
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      List<ConnectivityResult> results,
+    ) {
+      if (results.contains(ConnectivityResult.none)) {
+        _showNoInternetDialog();
+      } else {
+        _dismissDialog();
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       checkForUpdate(context);
       _syncStatus();
+      _showBatteryOptimizationDialog();
     });
+
+    _customEventSub = globalRadioAudioHandler.customEvent.listen((event) {
+      if (event is Map) {
+        final type = event['event'];
+        if (type == 'record_status') {
+          final isRec = event['isRecording'] as bool? ?? false;
+          if (mounted) setState(() => _isRecording = isRec);
+        } else if (type == 'permission_denied') {
+          final msg = event['message'] as String? ?? 'Permission denied';
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(msg),
+                backgroundColor: Colors.red.shade700,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+            setState(() => _isRecording = false);
+          }
+        }
+      }
+    });
+  }
+
+  Future<void> _checkInitialConnection() async {
+    final results = await Connectivity().checkConnectivity();
+    if (results.contains(ConnectivityResult.none)) {
+      _showNoInternetDialog();
+    }
+  }
+
+  void _showNoInternetDialog() {
+    if (_isDialogShowing || !mounted) return;
+
+    setState(() => _isDialogShowing = true);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Force user to acknowledge or reconnect
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.signal_wifi_off, color: Colors.red),
+            SizedBox(width: 10),
+            Text("No Internet"),
+          ],
+        ),
+        content: const Text(
+          "GR Radio requires an active internet connection to stream music. Please check your settings.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              final result = await Connectivity().checkConnectivity();
+              if (!result.contains(ConnectivityResult.none)) {
+                _dismissDialog();
+              }
+            },
+            child: const Text("RETRY"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _dismissDialog() {
+    if (_isDialogShowing && mounted) {
+      Navigator.of(context, rootNavigator: true).pop();
+      setState(() => _isDialogShowing = false);
+    }
+  }
+
+  void showNoInternetMessage() async {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text("No internet connection"),
+          content: Text("Please check your internet connection and try again."),
+          actions: [
+            TextButton(
+              child: Text("OK"),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _customEventSub?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _showBatteryOptimizationDialog() async {
+    var status = await Permission.ignoreBatteryOptimizations.status;
+    if (!status.isGranted && mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          title: const Text("Keep Radio Playing"),
+          content: const Text(
+            "To prevent the radio from stopping when your screen is off or during phone calls, "
+            "please allow the app to run in the background in the next screen.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("LATER"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                await Permission.ignoreBatteryOptimizations.request();
+              },
+              child: const Text("SETTINGS"),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   void _syncStatus() async {
@@ -569,284 +662,412 @@ class _MainNavigatorState extends State<MainNavigator> {
     isPremiumUser.value = prefs.getBool('is_premium') ?? false;
   }
 
-  void _navigateToMp3Recordings() {
-    setState(() {
-      _selectedIndex = 2; // Switch main tab to MP3 Player
-      _mp3SubTabIndex = 1; // Set MP3 Player sub-tab to Recordings
-    });
-  }
-
-  void _updateRecordingStatus(bool isRecording) {
-    setState(() {
-      _isRecording = isRecording;
-    });
-  }
-
-  Future<void> checkLocalPremiumStatus() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    // DO NOT use setState to overwrite isPremiumUser.
-    // Update its .value property instead.
-    isPremiumUser.value = prefs.getBool('is_premium') ?? false;
-  }
-
-  // 💡 Define the screens for the navigation (now 4 items)
-  List<Widget> get _widgetOptions => <Widget>[
-    RadioPlayerScreen(
-      onNavigateToMp3Tab: () => _onItemTapped(1),
-      onRecordingStatusChanged: _updateRecordingStatus,
-      onNavigateToRecordings: _navigateToMp3RecordingsTab,
-    ), // Your existing FM Radio screen
-    Mp3PlayerScreen(
-      key: ValueKey(_mp3SubTabIndex),
-      initialTabIndex: _mp3SubTabIndex,
-    ),
-    Mp3DownloadScreen(), // New MP3 Download screen
-    MoreScreen(),
-    //PremiumActivationScreen(), // New More screen
-  ];
-
   void _onItemTapped(int index) {
-    // Pause audio when switching between radio and MP3 player
-    if (_isRecording) return;
-
-    print('index: $index, selectedIndex: $_selectedIndex');
-    _analyticsService.logActivity(
-      deviceId ?? "unknown-device",
-      "index: $index, selectedIndex: $_selectedIndex",
-    );
-
-    if (_selectedIndex != index) {
-      if (index == 0 && _selectedIndex == 1) {
-        // Switching from MP3 to Radio - pause MP3
-        pauseMp3IfPlaying();
-      } else if (index == 1 && _selectedIndex == 0) {
-        // Switching from Radio to MP3 - pause radio
-        pauseRadioIfPlaying();
-      } /*else if (_selectedIndex == 4) {
-        // Switching from Radio to MP3 - pause radio
-        PremiumActivationScreen();
-      }*/
+    if (_isRecording) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Stop recording before switching tabs.'),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
     }
 
     setState(() {
       _previousIndex = _selectedIndex;
       _selectedIndex = index;
-
-      if (index == 1) {
-        _mp3SubTabIndex = 0;
-      }
+      if (index == 1) _mp3SubTabIndex = 0;
     });
   }
 
-  // Custom Bottom Navigation Bar Item
-  Widget _buildCustomNavItem({
-    required int index,
-    required IconData icon,
-    required String label,
-    required bool isSelected,
-  }) {
-    return Expanded(
-      child: Container(
-        margin: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected
-              ? _getItemColor(index).withOpacity(0.15)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-          border: isSelected
-              ? Border.all(
-                  color: _getItemColor(index).withOpacity(0.3),
-                  width: 1.5,
-                )
-              : null,
-          boxShadow: isSelected
-              ? [
+  @override
+  Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    final isDark = themeProvider.isDarkMode;
+
+    return Scaffold(
+      body: StreamBuilder<MediaItem?>(
+        stream: globalRadioAudioHandler.mediaItem,
+        builder: (context, itemSnapshot) {
+          return StreamBuilder<PlaybackState>(
+            stream: globalRadioAudioHandler.playbackState,
+            builder: (context, stateSnapshot) {
+              final mediaItem = itemSnapshot.data;
+              final isPlaying = stateSnapshot.data?.playing ?? false;
+              final bool hasMedia = mediaItem != null;
+
+              final double navBarClearance = 95.0;
+              final double screenHeight = MediaQuery.of(context).size.height;
+
+              return SlidingUpPanel(
+                controller: _panelController,
+                onPanelOpened: () =>
+                    setState(() => _isPanelOpen = true), // ✅ ADD
+                onPanelClosed: () => setState(() => _isPanelOpen = false),
+                minHeight: hasMedia ? 80.0 : 0.0,
+                maxHeight: screenHeight - navBarClearance,
+                margin: const EdgeInsets.only(bottom: 95),
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(25),
+                ),
+                color: isDark ? const Color(0xFF121212) : Colors.white,
+                collapsed: hasMedia
+                    ? MiniPlayerTile(
+                        mediaItem: mediaItem,
+                        isPlaying: isPlaying,
+                        isRecording: _isRecording,
+                        isBuffering:
+                            stateSnapshot.data?.processingState ==
+                                AudioProcessingState.loading ||
+                            stateSnapshot.data?.processingState ==
+                                AudioProcessingState.buffering,
+                        onTogglePlay: () => isPlaying
+                            ? globalRadioAudioHandler.pause()
+                            : globalRadioAudioHandler.play(),
+                        onTap: () => _panelController.open(),
+                        audioHandler: globalRadioAudioHandler,
+                      )
+                    : const SizedBox.shrink(),
+                panel: ExpandedPlayerContent(
+                  mediaItem: mediaItem,
+                  isPlaying: isPlaying,
+                  audioHandler: globalRadioAudioHandler,
+                  pc: _panelController,
+                  onNavigateToRecordings: _navigateToMp3RecordingsTab,
+                  onRecordingStatusChanged: (v) =>
+                      setState(() => _isRecording = v),
+                ),
+                body: Stack(
+                  children: [
+                    IndexedStack(
+                      index: _selectedIndex,
+                      children: [
+                        RadioPlayerScreen(
+                          onNavigateToMp3Tab: () => _onItemTapped(1),
+                          onRecordingStatusChanged: (v) =>
+                              setState(() => _isRecording = v),
+                          onNavigateToRecordings: _navigateToMp3RecordingsTab,
+                        ),
+                        Mp3PlayerScreen(
+                          key: ValueKey(_mp3SubTabIndex),
+                          initialTabIndex: _mp3SubTabIndex,
+                        ),
+                        Mp3DownloadScreen(),
+                        MoreScreen(),
+                      ],
+                    ),
+
+                    if (_selectedIndex != 0)
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 105),
+                          child: _buildMiniPlayer(),
+                        ),
+                      ),
+
+                    IgnorePointer(
+                      ignoring: _isPanelOpen,
+                      child: Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Padding(
+                          padding: EdgeInsets.only(
+                            bottom: MediaQuery.of(context).padding.bottom,
+                          ),
+                          child: _buildFloatingNavigationBar(isDark),
+                        ),
+                      ),
+                    ),
+
+                    if (_isRecording)
+                      Align(
+                        alignment: Alignment.bottomCenter,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.red.shade700,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.red.withOpacity(0.4),
+                                    blurRadius: 12,
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _PulsingDot(),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'RECORDING IN PROGRESS',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 0.8,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            AbsorbPointer(
+                              child: Opacity(
+                                opacity: 0.35,
+                                child: _buildFloatingNavigationBar(isDark),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildMiniPlayer() {
+    return StreamBuilder<MediaItem?>(
+      stream: globalRadioAudioHandler.mediaItem,
+      builder: (context, snapshot) {
+        final mediaItem = snapshot.data;
+        if (mediaItem == null) return const SizedBox.shrink();
+        return StreamBuilder<PlaybackState>(
+          stream: globalRadioAudioHandler.playbackState,
+          builder: (context, stateSnapshot) {
+            final isPlaying = stateSnapshot.data?.playing ?? false;
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
                   BoxShadow(
-                    color: _getItemColor(index).withOpacity(0.2),
-                    blurRadius: 8,
-                    offset: Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => _onItemTapped(index),
-            child: Container(
-              padding: EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Icon with gradient when selected
-                  Container(
-                    padding: EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      gradient: isSelected
-                          ? LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [
-                                _getItemColor(index),
-                                _getItemColor(index).withOpacity(0.7),
-                              ],
-                            )
-                          : null,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      icon,
-                      size: 20,
-                      color: isSelected ? Colors.white : Colors.grey.shade600,
-                    ),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: isSelected
-                          ? FontWeight.w700
-                          : FontWeight.w500,
-                      color: isSelected
-                          ? _getItemColor(index)
-                          : Colors.grey.shade600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 15,
                   ),
                 ],
               ),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      width: 48,
+                      height: 48,
+                      color: const Color(0xFF7C4DFF).withOpacity(0.1),
+                      child: const Icon(
+                        Icons.music_note,
+                        color: Color(0xFF7C4DFF),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          mediaItem.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        Text(
+                          mediaItem.artist ?? "Radio Stream",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Opacity(
+                    opacity: _isRecording ? 0.35 : 1.0,
+                    child: IconButton(
+                      icon: Icon(
+                        isPlaying
+                            ? Icons.pause_circle_filled
+                            : Icons.play_circle_filled,
+                      ),
+                      iconSize: 38,
+                      color: _isRecording
+                          ? Colors.grey
+                          : const Color(0xFF7C4DFF),
+                      onPressed: _isRecording
+                          ? null
+                          : () => isPlaying
+                                ? globalRadioAudioHandler.pause()
+                                : globalRadioAudioHandler.play(),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onPressed: _isRecording
+                        ? null
+                        : () => globalRadioAudioHandler.stop(),
+                    color: _isRecording ? Colors.grey : null,
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFloatingNavigationBar(bool isDark) {
+    return ClipRRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          height: 85,
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: isDark
+                ? Colors.black.withOpacity(0.6)
+                : Colors.white.withOpacity(0.7),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(
+              color: isDark
+                  ? Colors.white.withOpacity(0.1)
+                  : Colors.black.withOpacity(0.05),
             ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: List.generate(4, (index) {
+              final icons = [
+                Icons.radio,
+                Icons.music_note,
+                CupertinoIcons.arrow_down_circle_fill,
+                Icons.more_horiz,
+              ];
+              final labels = ['Radio', 'Player', 'Download', 'More'];
+              final isSelected = _selectedIndex == index;
+              return Expanded(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => _onItemTapped(index),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 8,
+                            horizontal: 16,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: isSelected
+                                ? const LinearGradient(
+                                    colors: [
+                                      Color(0xFF7C4DFF),
+                                      Color(0xFF448AFF),
+                                    ],
+                                  )
+                                : null,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Icon(
+                            icons[index],
+                            size: 24,
+                            color: isSelected
+                                ? Colors.white
+                                : Colors.grey.shade500,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          labels[index],
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            color: isSelected
+                                ? const Color(0xFF7C4DFF)
+                                : Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }),
           ),
         ),
       ),
     );
   }
+}
 
-  // Get color for each navigation item
-  Color _getItemColor(int index) {
-    switch (index) {
-      case 0: // FM Radio
-        return Colors.blue.shade700;
-      case 1: // MP3 Player
-        return Colors.purple.shade600;
-      case 2: // MP3 Download
-        return Colors.green.shade600;
-      case 3: // More
-        return Colors.orange.shade600;
-      case 3: // More
-        return Colors.amber;
-      default:
-        return Colors.blue.shade700;
-    }
+// ── Small blinking dot used in the recording lock badge ───────────────────────
+class _PulsingDot extends StatefulWidget {
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
   }
 
-  // Get icon for each navigation item
-  IconData _getItemIcon(int index) {
-    switch (index) {
-      case 0: // FM Radio
-        return Icons.radio;
-      case 1: // MP3 Player
-        return Icons.music_note;
-      case 2: // MP3 Download
-        return CupertinoIcons.arrow_down_circle_fill;
-      case 3: // More
-        return Icons.more_horiz;
-      case 4: // More
-        return Icons.star;
-      default:
-        return Icons.radio;
-    }
-  }
-
-  // Get label for each navigation item
-  String _getItemLabel(int index) {
-    switch (index) {
-      case 0:
-        return 'Radio';
-      case 1:
-        return 'Player';
-      case 2:
-        return 'Download';
-      case 3:
-        return 'More';
-      case 4:
-        return 'Premium';
-      default:
-        return 'Radio';
-    }
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: [
-          Expanded(
-            child: Center(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 300),
-                key: ValueKey<int>(_selectedIndex),
-                child: _widgetOptions.elementAt(_selectedIndex),
-              ),
-            ),
-          ),
-          // ✅ Conditionally show MiniPlayer only on Web
-        ],
-      ),
-      bottomNavigationBar: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 1. ONLY SHOW ADS IF NOT PREMIUM
-          ValueListenableBuilder<bool>(
-            valueListenable: isPremiumUser,
-            builder: (context, isPremium, child) {
-              // Ads are hidden if user is premium OR ads are globally disabled
-              if (isPremium || !globalAdsEnabled)
-                return const SizedBox.shrink();
-              return Container(
-                height: 50,
-                color: Colors.black,
-                child: const Center(
-                  child: Text(
-                    "Banner Ad Here",
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-              );
-            },
-          ),
-          //if (kIsWeb) MiniPlayer(handler: globalRadioAudioHandler),
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Theme.of(context).bottomNavigationBarTheme.backgroundColor,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
-                  blurRadius: 20,
-                  offset: Offset(0, 5),
-                  spreadRadius: 2,
-                ),
-              ],
-              border: Border.all(color: Colors.grey.shade200, width: 1),
-            ),
-            child: Row(
-              children: List.generate(4, (index) {
-                // Now 4 items
-                return _buildCustomNavItem(
-                  index: index,
-                  icon: _getItemIcon(index),
-                  label: _getItemLabel(index),
-                  isSelected: _selectedIndex == index,
-                );
-              }),
-            ),
-          ),
-        ],
+    return FadeTransition(
+      opacity: _ctrl,
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.white,
+        ),
       ),
     );
   }

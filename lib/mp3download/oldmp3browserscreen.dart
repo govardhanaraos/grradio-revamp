@@ -735,49 +735,6 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
                           ),
                         ),
 
-                        /* // Variation 1: Elevated Buttons (scrollable row)
-                        Container(
-                          height: 50,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            itemCount: _pagination.length,
-                            separatorBuilder: (_, __) => SizedBox(width: 8),
-                            itemBuilder: (context, index) {
-                              final page = _pagination[index];
-                              final isActive =
-                                  page.url ==
-                                  _currentUrl; // highlight active page
-                              return ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: isActive
-                                      ? Colors.blue.shade700
-                                      : Colors.blue.shade400,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 8,
-                                  ),
-                                ),
-                                onPressed: () => _navigateToDirectory(page.url),
-                                child: Text(
-                                  page.name,
-                                  style: TextStyle(
-                                    fontWeight: isActive
-                                        ? FontWeight.bold
-                                        : FontWeight.normal,
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-
-                        SizedBox(height: 16),*/
-
                         // Variation 2: Chips (lighter look)
                         SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
