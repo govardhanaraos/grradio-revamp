@@ -1,6 +1,6 @@
 // radio_handler_base.dart
 import 'package:audio_service/audio_service.dart';
-import 'package:grradio/radiostation.dart';
+import 'package:grradio/radio/radiostation.dart';
 
 abstract class RadioHandlerBase {
   void setStations(List<RadioStation> stations);

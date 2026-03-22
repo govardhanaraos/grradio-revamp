@@ -104,7 +104,12 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
 //  with a _loadCalled guard.
 // ─────────────────────────────────────────────────────────────────────────────
 class NativeInFeedAdTile extends StatefulWidget {
-  const NativeInFeedAdTile({Key? key}) : super(key: key);
+  final EdgeInsetsGeometry margin;
+
+  const NativeInFeedAdTile({
+    Key? key,
+    this.margin = const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+  }) : super(key: key);
 
   @override
   State<NativeInFeedAdTile> createState() => _NativeInFeedAdTileState();
@@ -165,7 +170,7 @@ class _NativeInFeedAdTileState extends State<NativeInFeedAdTile> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      margin: widget.margin,
       height: 72,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),

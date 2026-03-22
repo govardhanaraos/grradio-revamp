@@ -4,13 +4,22 @@ class SectionHeader extends StatelessWidget {
   final String title;
   final VoidCallback onSeeAll;
 
-  const SectionHeader({Key? key, required this.title, required this.onSeeAll})
-    : super(key: key);
+  /// Defaults to symmetric horizontal 16 / vertical 12 when null.
+  final EdgeInsetsGeometry? padding;
+
+  const SectionHeader({
+    Key? key,
+    required this.title,
+    required this.onSeeAll,
+    this.padding,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+      padding:
+          padding ??
+          const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [

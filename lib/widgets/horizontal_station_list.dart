@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../radiostation.dart';
+import 'package:grradio/radio/radiostation.dart';
 
 class HorizontalStationList extends StatelessWidget {
   final List<RadioStation> stations;

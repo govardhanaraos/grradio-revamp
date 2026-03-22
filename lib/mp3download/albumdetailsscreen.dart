@@ -12,7 +12,7 @@ import 'package:grradio/data/track_metadata.dart';
 import 'package:grradio/main.dart'; // 💡 NEW: To access globalMp3QueueService
 import 'package:grradio/more/downloadmanagerscreen.dart';
 import 'package:grradio/mp3download/mp3miniplayer.dart';
-import 'package:grradio/util/track_meta_data_service.dart';
+import 'package:grradio/mp3download/track_meta_data_service.dart';
 import 'package:hive/hive.dart';
 import 'package:html/dom.dart'
     as html_dom; // Fix: Use 'as' to prevent naming conflicts

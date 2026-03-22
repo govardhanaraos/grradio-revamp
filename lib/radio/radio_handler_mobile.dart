@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:dio/dio.dart';
-import 'package:grradio/radiostation.dart';
-import 'package:grradio/util/radio_handler_base.dart';
+import 'package:grradio/radio/radiostation.dart';
+import 'package:grradio/radio/radio_handler_base.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
@@ -162,10 +162,19 @@ class RadioHandlerImpl extends BaseAudioHandler
   }
 
   /// Internal: play one local file entry and update all state.
+  ///
+  /// Uses a single [setAudioSource] call. (Previously this path called
+  /// [setFilePath], then [stop], then [setAudioSource] again — decoding the
+  /// file twice and adding noticeable delay for local / downloaded / recorded
+  /// tracks.)
+  ///
+  /// Radio is unaffected: [playFromMediaId] / [_playStation] still do their own
+  /// [stop] + buffer delay + stream [setAudioSource]. Switching radio → local
+  /// replaces the current [AudioPlayer] source the same way switching stations
+  /// does; stream recovery and interruption logic all gate on [_currentStation].
   Future<void> _playLocalEntry(Map<String, String> entry) async {
     final path = entry['path']!;
     final title = entry['title']!;
-    final file = File(path);
 
     // Cancel any radio recovery — we are now in local-file mode.
     _recoveryTimer?.cancel();
@@ -173,29 +182,32 @@ class RadioHandlerImpl extends BaseAudioHandler
     _isRecovering = false;
     _currentStation = null; // null = local-file mode for skipToNext/Previous
 
-    Duration audioDuration = Duration.zero;
-    try {
-      audioDuration = await _player.setFilePath(file.path) ?? Duration.zero;
-    } catch (_) {}
-
-    await _player.stop();
+    // SongModel.data on Android may be content://; downloads/recordings use file paths.
+    final Uri playbackUri = path.startsWith('content://')
+        ? Uri.parse(path)
+        : Uri.file(path);
 
     final item = MediaItem(
-      id: file.path,
-      album: "Local Files",
+      id: path,
+      album: 'Local Files',
       title: title,
-      artist: "Downloaded",
-      duration: audioDuration,
+      artist: 'Local',
       artUri: null,
     );
-    mediaItem.add(item);
+
     try {
       await _player.setAudioSource(
-        AudioSource.uri(Uri.file(file.path), tag: item),
+        AudioSource.uri(playbackUri, tag: item),
       );
-      _player.play();
+      final resolved = _player.duration;
+      mediaItem.add(
+        resolved != null && resolved > Duration.zero
+            ? item.copyWith(duration: resolved)
+            : item,
+      );
+      await _player.play();
     } catch (e) {
-      print("Error playing local file: $e");
+      print('Error playing local file: $e');
     }
   }
 
@@ -699,6 +711,10 @@ class RadioHandlerImpl extends BaseAudioHandler
       return;
     }
     if (!isRecovery) {
+      // Leaving local-file mode (if any): drop queue so skip next/prev and
+      // _currentStation stay consistent — same handler serves radio + local MP3.
+      _localQueue = [];
+      _localQueueIndex = -1;
       _currentStation = station;
       mediaItem.add(station.toMediaItem());
     }

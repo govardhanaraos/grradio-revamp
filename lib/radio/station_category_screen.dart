@@ -2,8 +2,8 @@ import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../main.dart';
-import '../../radiostation.dart';
+import 'package:grradio/main.dart';
+import 'package:grradio/radio/radiostation.dart';
 
 class StationCategoryScreen extends StatelessWidget {
   final String title;

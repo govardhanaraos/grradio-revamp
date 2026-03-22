@@ -2,8 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-import 'main.dart';
+import 'package:grradio/main.dart';
 
 class AnimatedSplashScreen extends StatefulWidget {
   @override
@@ -14,33 +13,28 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
   late Animation<double> _animation;
-  bool _textVisible = false; // State for staggered text animation
+  bool _textVisible = false;
 
   @override
   void initState() {
     super.initState();
 
-    // 1. Controller for the pulse effect
     _controller = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     )..repeat(reverse: true);
 
-    // 2. Pulse Animation (Scale)
     _animation = Tween<double>(
       begin: 1.0,
       end: 1.1,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
 
-    // 3. HAPTIC FEEDBACK: Trigger at the peak of the pulse
     _controller.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
-        // Trigger a light vibration when the icon is at its largest
         HapticFeedback.lightImpact();
       }
     });
 
-    // 4. STAGGERED ANIMATION: Fade text in after 500ms
     Future.delayed(const Duration(milliseconds: 500), () {
       if (mounted) {
         setState(() {
@@ -49,7 +43,6 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
       }
     });
 
-    // 5. Navigation timer
     Timer(const Duration(seconds: 4), () {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => MainNavigator()),
@@ -69,21 +62,19 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
       body: Container(
         width: double.infinity,
         height: double.infinity,
-        // SUBTLE BACKGROUND GRADIENT
         decoration: BoxDecoration(
           gradient: RadialGradient(
             center: Alignment.center,
             radius: 1.2,
             colors: [
-              const Color(0xFF7C4DFF).withOpacity(0.08), // 8% Electric Violet
-              Colors.white, // Fades to pure white
+              const Color(0xFF7C4DFF).withOpacity(0.08),
+              Colors.white,
             ],
           ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // PULSING ICON
             ScaleTransition(
               scale: _animation,
               child: Image.asset(
@@ -93,8 +84,6 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
               ),
             ),
             const SizedBox(height: 30),
-
-            // STAGGERED TEXT ANIMATION
             AnimatedOpacity(
               duration: const Duration(milliseconds: 1000),
               curve: Curves.easeIn,

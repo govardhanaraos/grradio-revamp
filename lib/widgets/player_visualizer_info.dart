@@ -1,7 +1,7 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 
-import '../util/screens/musicvisualizer.dart';
+import 'package:grradio/radio/music_visualizer.dart';
 
 class PlayerVisualizerInfo extends StatelessWidget {
   final MediaItem? mediaItem;

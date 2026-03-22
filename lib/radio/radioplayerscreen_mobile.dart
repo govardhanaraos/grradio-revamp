@@ -8,8 +8,8 @@ import 'package:grradio/ads/ad_config_provider.dart';
 import 'package:grradio/ads/ad_widgets.dart';
 import 'package:grradio/main.dart';
 import 'package:grradio/more/theme_provider.dart';
-import 'package:grradio/radiostation.dart';
-import 'package:grradio/util/screens/stationcategoryscreen.dart';
+import 'package:grradio/radio/radiostation.dart';
+import 'package:grradio/radio/station_category_screen.dart';
 import 'package:grradio/widgets/horizontal_station_list.dart';
 import 'package:grradio/widgets/radio_animated_icons.dart';
 import 'package:grradio/widgets/section_header.dart';
@@ -703,9 +703,11 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                               currentMediaId: _currentMediaId,
                               onPlay: _playStation,
                             ),
-                            // All Stations header
+                            // All Stations — tighter bottom padding so the vertical
+                            // list sits closer to the title (matches carousel density).
                             SectionHeader(
                               title: 'All Stations',
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                               onSeeAll: () =>
                                   _navigateToCategory('All Stations', stations),
                             ),
@@ -718,18 +720,32 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                                     shrinkWrap: true,
                                     physics:
                                         const NeverScrollableScrollPhysics(),
+                                    padding: EdgeInsets.zero,
                                     itemCount: items.length,
                                     itemBuilder: (context, index) {
                                       final item = items[index];
+                                      final firstRow = index == 0;
                                       if (item is _AdItem) {
                                         return NativeInFeedAdTile(
                                           key: ValueKey('ad_${item.adIndex}'),
+                                          margin: firstRow
+                                              ? const EdgeInsets.fromLTRB(
+                                                  16,
+                                                  0,
+                                                  16,
+                                                  4,
+                                                )
+                                              : const EdgeInsets.symmetric(
+                                                  horizontal: 16,
+                                                  vertical: 4,
+                                                ),
                                         );
                                       }
                                       final s = (item as _StationItem).station;
                                       return _buildVerticalTile(
                                         s,
                                         tileKey: ValueKey('station_${s.id}'),
+                                        tightenTop: firstRow,
                                       );
                                     },
                                   ),
@@ -1163,7 +1179,11 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
     );
   }
 
-  Widget _buildVerticalTile(RadioStation station, {Key? tileKey}) {
+  Widget _buildVerticalTile(
+    RadioStation station, {
+    Key? tileKey,
+    bool tightenTop = false,
+  }) {
     final isPlaying = station.id == _currentMediaId;
     final isFav = _favouriteIds.contains(station.id);
     final isDark = _isDark;
@@ -1171,7 +1191,9 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
     return AnimatedContainer(
       key: tileKey,
       duration: const Duration(milliseconds: 300),
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      margin: tightenTop
+          ? const EdgeInsets.fromLTRB(16, 0, 16, 4)
+          : const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(14),
         color: isPlaying
