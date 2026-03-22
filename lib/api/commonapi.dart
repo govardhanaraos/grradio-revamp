@@ -40,7 +40,7 @@ class LicenseService {
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({"payload": transportPayload}),
     );
-    final result = await _handleResponse(response);
+    final result = _handleResponse(response);
     return result['active_devices'] ?? [];
   }
 

@@ -1,8 +1,9 @@
 // 💡 NEW: More Screen - Default Page
 import 'package:flutter/material.dart';
+import 'package:grradio/Env.dart';
 import 'package:grradio/more/about_screen.dart';
 import 'package:grradio/more/helpandsupport.dart';
-import 'package:grradio/more/notification_settings_screen.dart'; // Ensure path is correct
+import 'package:grradio/more/notification_settings_screen.dart';
 import 'package:grradio/more/theme_provider.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:provider/provider.dart';
@@ -10,58 +11,50 @@ import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 class MoreScreen extends StatelessWidget {
-  MoreScreen({Key? key}) : super(key: key);
+  const MoreScreen({Key? key}) : super(key: key);
 
-  final InAppReview _inAppReview = InAppReview.instance;
+  static final InAppReview _inAppReview = InAppReview.instance;
 
-  void _shareApp() {
-    const String appUrl =
-        'https://play.google.com/store/apps/details?id=com.your.package.name'; // Replace with your actual ID
+  Future<void> _shareApp() async {
     const String message =
-        'Hey! Check out GR Radio for high-quality radio streaming and premium features. Download it here: $appUrl';
-
-    Share.share(message, subject: 'Check out GR Radio App');
+        'Hey! Check out ${Env.appName} for high-quality radio streaming and premium features. Download it here: ${Env.playStoreUrl}';
+    await SharePlus.instance.share(
+      ShareParams(text: message, subject: 'Check out ${Env.appName}'),
+    );
   }
 
   Future<void> _rateApp() async {
     try {
-      // Check if the in-app review dialog is available (usually works on physical devices)
       if (await _inAppReview.isAvailable()) {
         await _inAppReview.requestReview();
       } else {
-        // If the dialog is not available, open the store listing directly
-        // Replace 'com.your.package.name' with your actual package ID
         await _inAppReview.openStoreListing(
-          appStoreId: 'YOUR_APP_STORE_ID', // Only required for iOS
+          appStoreId: Env.appStoreId.isEmpty ? null : Env.appStoreId,
           microsoftStoreId: null,
         );
       }
     } catch (e) {
-      debugPrint("Error launching review: $e");
+      debugPrint('Error launching review: $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
+    final themeProvider = context.watch<ThemeProvider>();
+    final isDark = themeProvider.isDarkMode;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: Text(
-          'More Options',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.blueGrey.shade800,
-          ),
+        title: const Text(
+          'More',
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
-        flexibleSpace: themeProvider.isDarkMode
+        flexibleSpace: isDark
             ? Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [
-                      Color(0xFF121212), // Dark Background
-                    ],
+                    colors: [Color(0xFF1A0A3E), Color(0xFF0D0D0D)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
@@ -70,50 +63,44 @@ class MoreScreen extends StatelessWidget {
             : Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(
-                    colors: [
-                      Color(0xFF7C4DFF), // Primary Blue for Radio tab
-                      Color(0xFF448AFF), // Light Blue
-                    ],
+                    colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                 ),
               ),
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
       ),
       body: SingleChildScrollView(
-        padding: EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // App Info Card
+            // ── App Info Card ──────────────────────────────────────────────
             Card(
               elevation: 4,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Padding(
-                padding: EdgeInsets.all(20),
+                padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
                     Container(
                       width: 120,
                       height: 120,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.blue.shade600,
-                            Colors.purple.shade600,
-                          ],
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
                         borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
+                        boxShadow: const [
                           BoxShadow(
-                            color: Colors.blue.withOpacity(0.3),
+                            color: Color(0x4D7C4DFF),
                             blurRadius: 10,
                             offset: Offset(0, 4),
                           ),
@@ -127,21 +114,29 @@ class MoreScreen extends StatelessWidget {
                         ),
                       ),
                     ),
-                    SizedBox(height: 16),
+                    const SizedBox(height: 16),
                     Text(
-                      'GR Radio',
+                      Env.appName,
                       style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
-                        color: Theme.of(context).textTheme.bodyLarge!.color!,
+                        color: isDark ? Colors.white : Colors.black87,
                       ),
                     ),
-                    SizedBox(height: 8),
+                    const SizedBox(height: 4),
+                    Text(
+                      'v${Env.appVersion}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.grey[400] : Colors.grey[500],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     Text(
                       'Your Ultimate Music Companion',
                       style: TextStyle(
                         fontSize: 14,
-                        color: Theme.of(context).textTheme.bodyLarge!.color!,
+                        color: isDark ? Colors.grey[400] : Colors.grey[500],
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -150,87 +145,57 @@ class MoreScreen extends StatelessWidget {
               ),
             ),
 
-            SizedBox(height: 20),
+            const SizedBox(height: 24),
 
-            // Settings Section
-            Text(
-              'Settings',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).textTheme.bodyLarge!.color!,
-              ),
-            ),
-            SizedBox(height: 12),
+            // ── Settings Section ───────────────────────────────────────────
+            _buildSectionLabel('Settings', isDark),
+            const SizedBox(height: 12),
 
             _buildSettingsItem(
-              icon: Icons.star,
+              icon: Icons.star_rounded,
               title: 'Go Premium (Ad-Free)',
-              subtitle: 'Get Premium subscription',
-              color: Colors.amber,
+              subtitle: 'Unlock all features with a subscription',
+              iconColor: Colors.amber.shade700,
+              isDark: isDark,
               onTap: () async {
-                // This displays the Paywall you designed in the RevenueCat Dashboard
                 final paywallResult = await RevenueCatUI.presentPaywall();
-
-                // Optional: You can check the result if needed
                 if (paywallResult == PaywallResult.purchased) {
-                  debugPrint("Purchase successful!");
+                  debugPrint('Purchase successful!');
                 }
               },
-
-              // onTap: () {
-              //   Navigator.push(
-              //     context,
-              //     MaterialPageRoute(builder: (_) => PremiumActivationScreen()),
-              //   );
-              // },
             ),
+
             _buildSettingsItem(
-              icon: Icons.notifications,
+              icon: Icons.notifications_rounded,
               title: 'Notifications',
               subtitle: 'Manage your notification preferences',
-              color: Theme.of(context).textTheme.bodyLarge!.color!,
+              iconColor: const Color(0xFF7C4DFF),
+              isDark: isDark,
               onTap: () {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const NotificationSettingsScreen(),
+                    builder: (_) => const NotificationSettingsScreen(),
                   ),
                 );
               },
             ),
 
-            _buildSettingsItem(
-              icon: Icons.nightlight_round,
-              title: 'Dark Mode',
-              subtitle: 'Switch between light and dark themes',
-              color: Theme.of(context).textTheme.bodyLarge!.color!,
-              onTap: () {
-                Provider.of<ThemeProvider>(
-                  context,
-                  listen: false,
-                ).toggleTheme();
-              },
-            ),
+            // Dark mode tile — uses a Switch as trailing to show current state
+            _buildDarkModeTile(context, themeProvider, isDark),
 
-            SizedBox(height: 20),
+            const SizedBox(height: 24),
 
-            // Support Section
-            Text(
-              'Support',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).textTheme.bodyLarge!.color!,
-              ),
-            ),
-            SizedBox(height: 12),
+            // ── Support Section ────────────────────────────────────────────
+            _buildSectionLabel('Support', isDark),
+            const SizedBox(height: 12),
 
             _buildSettingsItem(
-              icon: Icons.help_outline,
+              icon: Icons.help_outline_rounded,
               title: 'Help & Support',
               subtitle: 'Get help and contact support',
-              color: Theme.of(context).textTheme.bodyLarge!.color!,
+              iconColor: const Color(0xFF7C4DFF),
+              isDark: isDark,
               onTap: () {
                 Navigator.push(
                   context,
@@ -240,83 +205,157 @@ class MoreScreen extends StatelessWidget {
             ),
 
             _buildSettingsItem(
-              icon: Icons.star_rate,
+              icon: Icons.star_rate_rounded,
               title: 'Rate App',
               subtitle: 'Share your feedback with us',
-              color: Theme.of(context).textTheme.bodyLarge!.color!,
+              iconColor: Colors.orange.shade700,
+              isDark: isDark,
               onTap: _rateApp,
             ),
 
             _buildSettingsItem(
-              icon: Icons.share,
+              icon: Icons.share_rounded,
               title: 'Share App',
               subtitle: 'Share with your friends',
-              color: Theme.of(context).textTheme.bodyLarge!.color!,
+              iconColor: const Color(0xFF448AFF),
+              isDark: isDark,
               onTap: _shareApp,
             ),
 
             _buildSettingsItem(
-              icon: Icons.info_outline,
+              icon: Icons.info_outline_rounded,
               title: 'About',
               subtitle: 'App version and information',
-              color: Theme.of(context).textTheme.bodyLarge!.color!,
+              iconColor: Colors.teal.shade600,
+              isDark: isDark,
               onTap: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const AboutScreen()),
+                  MaterialPageRoute(builder: (_) => const AboutScreen()),
                 );
               },
             ),
 
-            SizedBox(height: 30),
+            const SizedBox(height: 30),
 
-            // App Version
+            // ── Footer ────────────────────────────────────────────────────
             Center(
               child: Text(
-                'Version 1.0.0',
+                '© 2025 ${Env.appName}. All Rights Reserved.',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Theme.of(context).textTheme.bodyLarge!.color!,
+                  color: isDark ? Colors.grey[600] : Colors.grey[400],
                 ),
               ),
             ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
   }
 
+  Widget _buildSectionLabel(String label, bool isDark) {
+    return Text(
+      label,
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.1,
+        color: isDark ? Colors.grey[400] : Colors.grey[600],
+      ),
+    );
+  }
+
+  /// Standard settings row — distinct icon color per item, clean trailing arrow.
   Widget _buildSettingsItem({
     required IconData icon,
     required String title,
     required String subtitle,
-    required Color color,
+    required Color iconColor,
+    required bool isDark,
     required VoidCallback onTap,
   }) {
     return Card(
-      margin: EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 8),
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         leading: Container(
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: iconColor.withOpacity(0.12),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(icon, color: color, size: 20),
+          child: Icon(icon, color: iconColor, size: 20),
         ),
         title: Text(
           title,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
         ),
         subtitle: Text(
           subtitle,
-          style: TextStyle(fontSize: 12, color: color.withOpacity(0.9)),
+          style: TextStyle(
+            fontSize: 12,
+            color: isDark ? Colors.grey[500] : Colors.grey[600],
+          ),
         ),
-        trailing: Icon(Icons.arrow_forward_ios, size: 16, color: color),
+        trailing: Icon(
+          Icons.arrow_forward_ios_rounded,
+          size: 15,
+          color: isDark ? Colors.grey[600] : Colors.grey[400],
+        ),
         onTap: onTap,
+      ),
+    );
+  }
+
+  /// Dark mode tile with a Switch trailing indicator showing current state.
+  Widget _buildDarkModeTile(
+    BuildContext context,
+    ThemeProvider themeProvider,
+    bool isDark,
+  ) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: const Color(0xFF7C4DFF).withOpacity(0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(
+            isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+            color: const Color(0xFF7C4DFF),
+            size: 20,
+          ),
+        ),
+        title: const Text(
+          'Dark Mode',
+          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+        ),
+        subtitle: Text(
+          isDark ? 'Dark theme is on' : 'Light theme is on',
+          style: TextStyle(
+            fontSize: 12,
+            color: isDark ? Colors.grey[500] : Colors.grey[600],
+          ),
+        ),
+        trailing: Switch(
+          value: isDark,
+          activeThumbColor: const Color(0xFF7C4DFF),
+          onChanged: (_) {
+            context.read<ThemeProvider>().toggleTheme();
+          },
+        ),
+        onTap: () => context.read<ThemeProvider>().toggleTheme(),
       ),
     );
   }

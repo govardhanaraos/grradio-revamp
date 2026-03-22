@@ -1,18 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:grradio/Env.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class ContactSupportScreen extends StatelessWidget {
   const ContactSupportScreen({Key? key}) : super(key: key);
 
-  final String supportEmail = "grradio-support@gmail.com";
-
   Future<void> _launchEmail() async {
     final Uri emailUri = Uri(
       scheme: 'mailto',
-      path: "grradio.customercare@gmail.com",
-      query: "subject=GR Radio Support Request",
+      path: Env.supportEmail,
+      query: 'subject=GR Radio Support Request',
     );
-
     if (await canLaunchUrl(emailUri)) {
       await launchUrl(emailUri);
     }
@@ -21,55 +19,105 @@ class ContactSupportScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Contact Support"), centerTitle: true),
+      appBar: AppBar(
+        title: const Text(
+          'Contact Support',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        centerTitle: true,
+        iconTheme: const IconThemeData(color: Colors.white),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
       body: Center(
         child: Card(
           elevation: 4,
-          margin: EdgeInsets.all(20),
+          margin: const EdgeInsets.all(24),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
           child: Padding(
-            padding: EdgeInsets.all(20),
+            padding: const EdgeInsets.all(28),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.support_agent,
-                  size: 60,
-                  color: Colors.orange.shade700,
+                Container(
+                  width: 72,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF7C4DFF).withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.support_agent_rounded,
+                    size: 36,
+                    color: Color(0xFF7C4DFF),
+                  ),
                 ),
-                SizedBox(height: 16),
-                Text(
-                  "Need Help?",
+                const SizedBox(height: 20),
+                const Text(
+                  'Need Help?',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                 ),
-                SizedBox(height: 10),
+                const SizedBox(height: 10),
                 Text(
-                  "You can reach our support team at:",
+                  'You can reach our support team at:',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                 ),
-                SizedBox(height: 20),
-
-                // Tappable Email
+                const SizedBox(height: 20),
+                // Tappable email — uses Env.supportEmail so both display
+                // and mailto: target stay in sync automatically.
                 InkWell(
                   onTap: _launchEmail,
-                  child: Text(
-                    supportEmail,
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: Colors.blue.shade700,
-                      decoration: TextDecoration.underline,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    child: Text(
+                      Env.supportEmail,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Color(0xFF7C4DFF),
+                        decoration: TextDecoration.underline,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
-
-                SizedBox(height: 20),
+                const SizedBox(height: 20),
                 Text(
-                  "Tap the email above to open your default mail app.",
+                  'Tap the email above to open your mail app.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                  style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _launchEmail,
+                    icon: const Icon(Icons.email_rounded, size: 18),
+                    label: const Text('Send Email'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7C4DFF),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
                 ),
               ],
             ),

@@ -7,8 +7,6 @@ import 'package:grradio/masstamilan/data/mp3queplayer.dart';
 import 'package:grradio/masstamilan/presentation/modernminiplayer.dart';
 import 'package:grradio/more/downloadmanagerscreen.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../data/masstelugualbumdetails.dart';
 
 class AlbumDetailsPage extends StatefulWidget {
@@ -296,11 +294,15 @@ class _AlbumDetailsPageState extends State<AlbumDetailsPage> {
       return;
     }
 
-    // Initialize state
-    isDownloadingNotifier.value[downloadKey] = true;
-    downloadProgressNotifier.value[downloadKey] = 0.0;
-    isDownloadingNotifier.notifyListeners();
-    downloadProgressNotifier.notifyListeners();
+    // Initialize state (new maps so ValueNotifier listeners fire)
+    isDownloadingNotifier.value = {
+      ...isDownloadingNotifier.value,
+      downloadKey: true,
+    };
+    downloadProgressNotifier.value = {
+      ...downloadProgressNotifier.value,
+      downloadKey: 0.0,
+    };
 
     // Open download manager screen
     Navigator.push(
@@ -348,13 +350,18 @@ class _AlbumDetailsPageState extends State<AlbumDetailsPage> {
           if (total > 0) {
             final progress = (received / total) * 100;
 
-            downloadProgressNotifier.value[downloadKey] = progress;
-            downloadReceivedNotifier.value[downloadKey] = received;
-            downloadTotalNotifier.value[downloadKey] = total;
-
-            downloadProgressNotifier.notifyListeners();
-            downloadReceivedNotifier.notifyListeners();
-            downloadTotalNotifier.notifyListeners();
+            downloadProgressNotifier.value = {
+              ...downloadProgressNotifier.value,
+              downloadKey: progress,
+            };
+            downloadReceivedNotifier.value = {
+              ...downloadReceivedNotifier.value,
+              downloadKey: received,
+            };
+            downloadTotalNotifier.value = {
+              ...downloadTotalNotifier.value,
+              downloadKey: total,
+            };
           }
         },
         options: Options(
@@ -376,20 +383,13 @@ class _AlbumDetailsPageState extends State<AlbumDetailsPage> {
         context,
       ).showSnackBar(SnackBar(content: Text("Download failed: $e")));
     } finally {
-      isDownloadingNotifier.value[downloadKey] = false;
-      downloadProgressNotifier.value.remove(downloadKey);
+      final done = Map<String, bool>.from(isDownloadingNotifier.value)
+        ..remove(downloadKey);
+      isDownloadingNotifier.value = done;
 
-      isDownloadingNotifier.notifyListeners();
-      downloadProgressNotifier.notifyListeners();
+      final prog = Map<String, double>.from(downloadProgressNotifier.value)
+        ..remove(downloadKey);
+      downloadProgressNotifier.value = prog;
     }
-  }
-
-  void _download(String url) async {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text("Downloading...")));
-
-    // You can use flutter_downloader or url_launcher
-    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
   }
 }

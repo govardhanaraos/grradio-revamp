@@ -13,19 +13,14 @@ class HelpSupportScreen extends StatefulWidget {
 class _HelpSupportScreenState extends State<HelpSupportScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late Animation<double> _fade;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: 800),
-    );
-
-    _fade = CurvedAnimation(parent: _controller, curve: Curves.easeInOut);
-
-    _controller.forward();
+      duration: const Duration(milliseconds: 800),
+    )..forward();
   }
 
   @override
@@ -34,23 +29,63 @@ class _HelpSupportScreenState extends State<HelpSupportScreen>
     super.dispose();
   }
 
+  /// Returns a staggered fade+slide animation for each item in the list.
+  /// Each item fades in slightly after the previous one for a cascade effect.
+  Animation<double> _fadeFor(int index) {
+    final start = index * 0.15;
+    final end = (start + 0.55).clamp(0.0, 1.0);
+    return CurvedAnimation(
+      parent: _controller,
+      curve: Interval(start, end, curve: Curves.easeOut),
+    );
+  }
+
   Widget _buildItem({
+    required int index,
     required IconData icon,
     required String title,
     required String subtitle,
     required VoidCallback onTap,
   }) {
     return FadeTransition(
-      opacity: _fade,
-      child: Card(
-        elevation: 3,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        child: ListTile(
-          leading: Icon(icon, size: 28, color: Colors.orange.shade700),
-          title: Text(title, style: TextStyle(fontWeight: FontWeight.bold)),
-          subtitle: Text(subtitle),
-          trailing: Icon(Icons.arrow_forward_ios, size: 16),
-          onTap: onTap,
+      opacity: _fadeFor(index),
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.15),
+          end: Offset.zero,
+        ).animate(_fadeFor(index)),
+        child: Card(
+          elevation: 2,
+          margin: const EdgeInsets.only(bottom: 12),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          child: ListTile(
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            leading: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFF7C4DFF).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 22, color: const Color(0xFF7C4DFF)),
+            ),
+            title: Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            ),
+            subtitle: Text(
+              subtitle,
+              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+            ),
+            trailing: Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 15,
+              color: Colors.grey[400],
+            ),
+            onTap: onTap,
+          ),
         ),
       ),
     );
@@ -60,59 +95,62 @@ class _HelpSupportScreenState extends State<HelpSupportScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Help & Support"),
+        title: const Text(
+          'Help & Support',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         centerTitle: true,
+        iconTheme: const IconThemeData(color: Colors.white),
         flexibleSpace: Container(
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [Color(0xFFF57C00), Color(0xFFFFB74D)],
+              colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
           ),
         ),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
       ),
-      body: FadeTransition(
-        opacity: _fade,
-        child: ListView(
-          padding: EdgeInsets.all(16),
-          children: [
-            _buildItem(
-              icon: Icons.question_answer,
-              title: "FAQ",
-              subtitle: "Frequently asked questions",
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => FAQScreen()),
-                );
-              },
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const SizedBox(height: 4),
+          _buildItem(
+            index: 0,
+            icon: Icons.question_answer_rounded,
+            title: 'FAQ',
+            subtitle: 'Frequently asked questions',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const FAQScreen()),
             ),
-            _buildItem(
-              icon: Icons.support_agent,
-              title: "Contact Support",
-              subtitle: "Reach out to our support team",
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => ContactSupportScreen()),
-                );
-              },
+          ),
+          _buildItem(
+            index: 1,
+            icon: Icons.support_agent_rounded,
+            title: 'Contact Support',
+            subtitle: 'Reach out to our support team',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ContactSupportScreen()),
             ),
-
-            _buildItem(
-              icon: Icons.feedback,
-              title: "Submit Feedback / Complaint",
-              subtitle: "Tell us your issue or suggestion",
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => FeedbackFormScreen()),
-                );
-              },
+          ),
+          _buildItem(
+            index: 2,
+            icon: Icons.feedback_rounded,
+            title: 'Submit Feedback',
+            subtitle: 'Tell us your issue or suggestion',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => FeedbackFormScreen()),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

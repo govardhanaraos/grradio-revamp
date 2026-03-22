@@ -171,6 +171,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
   // ── Multi-select ──────────────────────────────────────────────────────────
   final Set<String> _selectedIds = {};
   bool _isSelecting = false;
+  bool _isRefreshing = false;
 
   // ── Ad state — snapshotted once in didChangeDependencies ──────────────────
   // Same pattern as RadioPlayerScreen: cache flags so build() never calls
@@ -720,7 +721,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
             if (isRec || isDl)
               _ctxTile(Icons.delete_outline_rounded, 'Delete', () {
                 Navigator.pop(context);
-                _deleteFile(item, isRec);
+                _promptAndDeleteFile(item, isRec);
               }, color: Colors.red),
             const SizedBox(height: 8),
           ],
@@ -843,7 +844,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
     }
   }
 
-  Future<void> _deleteFile(dynamic file, bool isRec) async {
+  Future<void> _promptAndDeleteFile(dynamic file, bool isRec) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -869,7 +870,12 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok == true) {
+      await _doDeleteFile(file, isRec);
+    }
+  }
+
+  Future<void> _doDeleteFile(dynamic file, bool isRec) async {
     try {
       final f = File(_idOf(file));
       if (await f.exists()) {
@@ -921,13 +927,16 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(20, 4, 20, 4),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 4),
                 child: Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    'Sort by',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    'Sort ${['music', 'downloads', 'recordings'][tab]} by',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
                   ),
                 ),
               ),
@@ -1520,7 +1529,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                         padding: const EdgeInsets.only(right: 20),
                         margin: const EdgeInsets.symmetric(
                           horizontal: 12,
-                          vertical: 6,
+                          vertical: 5,
                         ),
                         decoration: BoxDecoration(
                           color: Colors.red.shade600,
@@ -1581,7 +1590,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                             ) ??
                             false;
                       },
-                      onDismissed: (_) => _deleteFile(entry, isRec),
+                      onDismissed: (_) => _doDeleteFile(entry, isRec),
                       child: tile,
                     );
                   }
@@ -1825,7 +1834,11 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                   : isRec
                   ? Icons.mic
                   : Icons.music_note,
-              color: isSel || isMSel ? const Color(0xFF7C4DFF) : Colors.grey,
+              color: isMSel
+                  ? const Color(0xFF7C4DFF)
+                  : isSel
+                  ? Colors.white
+                  : Colors.grey,
               size: 22,
             ),
             if (isPlay)
@@ -1885,9 +1898,25 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
           ),
           const SizedBox(height: 28),
           ElevatedButton.icon(
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Refresh'),
+            onPressed: _isRefreshing
+                ? null
+                : () async {
+                    if (!mounted) return;
+                    setState(() => _isRefreshing = true);
+                    await onRefresh();
+                    if (mounted) setState(() => _isRefreshing = false);
+                  },
+            icon: _isRefreshing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.refresh_rounded),
+            label: Text(_isRefreshing ? 'Refreshing...' : 'Refresh'),
             style: ElevatedButton.styleFrom(
               padding: btnPad,
               backgroundColor: const Color(0xFF7C4DFF),
@@ -1935,7 +1964,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
             icon: Icon(Icons.security, size: iS * 0.8),
             label: Text('Grant Permission', style: TextStyle(fontSize: eSuS)),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blueGrey[900],
+              backgroundColor: const Color(0xFF7C4DFF),
               foregroundColor: Colors.white,
               padding: EdgeInsets.symmetric(
                 horizontal: sw * 0.1,

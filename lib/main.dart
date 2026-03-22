@@ -164,7 +164,7 @@ Future<String> _getDeviceId() async {
   final deviceInfo = DeviceInfoPlugin();
   if (Platform.isAndroid) {
     final androidInfo = await deviceInfo.androidInfo;
-    return androidInfo.id ?? "unknown";
+    return androidInfo.id;
   } else if (Platform.isIOS) {
     final iosInfo = await deviceInfo.iosInfo;
     return iosInfo.identifierForVendor ?? "unknown";
@@ -238,35 +238,6 @@ void checkForUpdate(BuildContext context) async {
         ],
       ),
     );
-  }
-}
-
-Future<void> _loadStationsInBackground(Box<RadioStation> box) async {
-  List<RadioStation> mergedStations = [];
-  int currentPage = 1;
-  bool hasMore = true;
-
-  try {
-    while (hasMore) {
-      final stations = await _radioService.fetchRadioStations(
-        page: currentPage,
-        limit: limitPerPage,
-      );
-      mergedStations.addAll(stations);
-      // Fire per-page so RadioPlayerScreen can render progressively.
-      // Use a new list copy so ValueNotifier detects the change.
-      stationsNotifier.value = List.unmodifiable(mergedStations);
-      if (stations.length < limitPerPage) {
-        hasMore = false;
-      }
-      currentPage++;
-    }
-    // Mark all pages complete — triggers final ad injection in the screen.
-    stationsLoadingComplete.value = true;
-    await box.clear();
-    await box.addAll(mergedStations);
-  } catch (e) {
-    print('Background station refresh failed: $e');
   }
 }
 
@@ -372,7 +343,7 @@ Future<void> _initAudioHandlers() async {
     globalRadioAudioHandler.setStations(stationsNotifier.value);
   });
 
-  globalMp3QueueService = await Mp3PlayerHandler();
+  globalMp3QueueService = Mp3PlayerHandler();
   globalMp3QueueService.init();
 }
 
@@ -395,6 +366,7 @@ void main() async {
   deviceId = await _getPersistentDeviceId();
   await initializeApp();
   await Firebase.initializeApp();
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   NotificationService notificationService = NotificationService();
   await notificationService.initNotifications();
   await _initAudioHandlers();
@@ -491,7 +463,6 @@ class MainNavigator extends StatefulWidget {
 
 class _MainNavigatorState extends State<MainNavigator> {
   int _selectedIndex = 0;
-  int _previousIndex = 0;
   int _mp3SubTabIndex = 0;
   bool _isRecording = false;
   bool _isPanelOpen = false;
@@ -623,6 +594,7 @@ class _MainNavigatorState extends State<MainNavigator> {
 
   @override
   void dispose() {
+    _connectivitySubscription?.cancel();
     _customEventSub?.cancel();
     super.dispose();
   }
@@ -676,7 +648,6 @@ class _MainNavigatorState extends State<MainNavigator> {
     }
 
     setState(() {
-      _previousIndex = _selectedIndex;
       _selectedIndex = index;
       if (index == 1) _mp3SubTabIndex = 0;
     });

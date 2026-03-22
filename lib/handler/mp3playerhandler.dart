@@ -211,8 +211,9 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
     mediaItem.add(item);
   }
 
-  Future<void> updateQueue(List<audio_service.MediaItem> items) async {
-    await setQueue(items, _currentMp3TargetUrl ?? '');
+  @override
+  Future<void> updateQueue(List<audio_service.MediaItem> queue) async {
+    await setQueue(queue, _currentMp3TargetUrl ?? '');
   }
 
   Future<void> startQueue(List<SongData> songs, int startIndex) async {
@@ -248,10 +249,11 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
   }
 
   // 💡 FIXED: Adds to _playlist, does not touch queue manually
-  Future<void> addQueueItem(audio_service.MediaItem item) async {
+  @override
+  Future<void> addQueueItem(audio_service.MediaItem mediaItem) async {
     final source = just_audio.AudioSource.uri(
       Uri.parse('asset:///dummy.mp3'),
-      tag: item,
+      tag: mediaItem,
     );
     await _playlist.add(source);
     // 🛑 REMOVED: queue.add(...)
@@ -290,12 +292,13 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
       // We don't need to manually check for completion here, as the index stream handles the advance.
     });
 
-    bool _isReplacingSource = false;
+    bool isReplacingSource = false;
 
     // 💡 NEW CRITICAL LOGIC: Intercept track changes to load the real URL
     _player.currentIndexStream.listen((index) async {
-      if (index == null || _playlist.children.isEmpty || _isReplacingSource)
+      if (index == null || _playlist.children.isEmpty || isReplacingSource) {
         return;
+      }
 
       // Ensure the current song object is accessible
       if (index >= _playlist.children.length) return;
@@ -305,7 +308,7 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
 
       // Check if the current source is the dummy source
       if (source.uri.toString().contains('mp3')) {
-        _isReplacingSource = true; // Block subsequent calls
+        isReplacingSource = true; // Block subsequent calls
         print(
           'INFO: Current index changed to $index. Loading real URL for: ${currentMediaItem.title}',
         );
@@ -314,18 +317,10 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
           // This is the function that does the network fetch and source replacement
           await _loadAndPlaySong(currentMediaItem);
         } finally {
-          _isReplacingSource = false; // Release the lock
+          isReplacingSource = false; // Release the lock
         }
       }
     });
-  }
-
-  void _handlePlaybackCompletion() async {
-    if (_player.hasNext) {
-      await skipToNext();
-    } else {
-      await stop();
-    }
   }
 
   Future<String?> _extractStreamUrl(String fileId) async {
@@ -352,7 +347,7 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
 
           for (final anchor in anchors) {
             final href = anchor.attributes['href'] ?? '';
-            final text = anchor.text?.trim() ?? '';
+            final text = anchor.text.trim();
 
             if (href.isNotEmpty) {
               // 2. Construct the full URL (Handling relative paths)
@@ -436,14 +431,14 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
   @override
   Future<dynamic> customAction(
     String name, [
-    Map<String, dynamic>? arguments,
+    Map<String, dynamic>? extras,
   ]) async {
     // 💡 FIXED: Logic updated to avoid manual queue.add
-    if (name == 'playQueueAndFirstSong' && arguments != null) {
+    if (name == 'playQueueAndFirstSong' && extras != null) {
       final List<audio_service.MediaItem> fullQueue =
-          arguments['queue'] as List<audio_service.MediaItem>;
-      final String initialUrl = arguments['initialUrl'] as String;
-      final String targetUrl = arguments['targetUrl'] as String;
+          extras['queue'] as List<audio_service.MediaItem>;
+      final String initialUrl = extras['initialUrl'] as String;
+      final String targetUrl = extras['targetUrl'] as String;
 
       _currentMp3TargetUrl = targetUrl;
 
@@ -478,7 +473,7 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
       mediaItem.add(fullQueue.first);
       return;
     }
-    return super.customAction(name, arguments);
+    return super.customAction(name, extras);
   }
 
   @override
