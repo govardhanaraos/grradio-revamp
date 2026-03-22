@@ -70,6 +70,11 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
   bool _shuffleEnabled = false;
   String _repeatMode = 'LoopMode.off';
   StreamSubscription<Duration>? _positionSub;
+
+  /// While dragging the seek bar, parent scroll is disabled and stream position
+  /// does not fight the thumb.
+  bool _sliderDragging = false;
+  double _sliderDragValue = 0.0;
   // ─────────────────────────────────────────────────────────────────────────
   // True for live radio stations; false only when album is explicitly 'Local Files'.
   // Defaults to true (show record) when album is null/empty so the button is
@@ -122,30 +127,25 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
       if (dur != _duration) setState(() => _duration = dur);
     });
     _positionSub = globalRadioAudioHandler.positionStream.listen((pos) {
-      if (mounted) setState(() => _position = pos);
+      if (mounted && !_sliderDragging) setState(() => _position = pos);
     });
     _customEventSub = widget.audioHandler.customEvent.listen((event) {
-      if (event is Map) {
-        if (event['event'] == 'shuffle_changed') {
-          setState(() {
-            _shuffleEnabled = event['enabled'] as bool;
-          });
-        } else if (event['event'] == 'repeat_changed') {
-          setState(() {
-            _repeatMode = event['mode'] as String;
-          });
-        }
-      }
-    });
-    // ── Listen to handler events so UI stays in sync with actual recording state
-    _customEventSub = widget.audioHandler.customEvent.listen((event) {
-      if (event is Map && event['event'] == 'record_status') {
+      if (event is! Map) return;
+      final type = event['event'];
+      if (type == 'shuffle_changed') {
+        setState(() {
+          _shuffleEnabled = event['enabled'] as bool;
+        });
+      } else if (type == 'repeat_changed') {
+        setState(() {
+          _repeatMode = event['mode'] as String;
+        });
+      } else if (type == 'record_status') {
         final isRec = event['isRecording'] as bool? ?? false;
         if (!mounted) return;
         setState(() => _isRecording = isRec);
 
         if (isRec) {
-          // Recording just started
           _pulseCtrl.repeat();
           _recordSeconds = 0;
           _recordTimer?.cancel();
@@ -153,14 +153,13 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
             if (mounted) setState(() => _recordSeconds++);
           });
         } else {
-          // Recording stopped
           _pulseCtrl.stop();
           _pulseCtrl.reset();
           _recordTimer?.cancel();
         }
 
         widget.onRecordingStatusChanged?.call(isRec);
-      } else if (event is Map && event['event'] == 'permission_denied') {
+      } else if (type == 'permission_denied') {
         if (!mounted) return;
         final msg = event['message'] as String? ?? 'Permission denied';
         ScaffoldMessenger.of(context).showSnackBar(
@@ -254,6 +253,14 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
     );
   }
 
+  double get _sliderDisplayValue {
+    if (_duration.inMilliseconds <= 0) return 0.0;
+    if (_sliderDragging) {
+      return _sliderDragValue.clamp(0.0, 1.0);
+    }
+    return _progressValue;
+  }
+
   void _onSeek(double value) {
     if (_duration.inMilliseconds <= 0) return;
     widget.audioHandler.seek(
@@ -274,9 +281,11 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(
-        parent: AlwaysScrollableScrollPhysics(),
-      ),
+      physics: _sliderDragging
+          ? const NeverScrollableScrollPhysics()
+          : const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
       child: Padding(
         padding: const EdgeInsets.only(bottom: 32),
         child: Column(
@@ -561,9 +570,25 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
                         overlayColor: const Color(0xFF7C4DFF).withOpacity(0.15),
                       ),
                       child: Slider(
-                        value: _progressValue,
+                        value: _sliderDisplayValue,
+                        onChangeStart: _duration.inMilliseconds > 0
+                            ? (_) {
+                                setState(() {
+                                  _sliderDragging = true;
+                                  _sliderDragValue = _progressValue;
+                                });
+                              }
+                            : null,
                         onChanged: _duration.inMilliseconds > 0
-                            ? _onSeek
+                            ? (v) {
+                                setState(() => _sliderDragValue = v);
+                                _onSeek(v);
+                              }
+                            : null,
+                        onChangeEnd: _duration.inMilliseconds > 0
+                            ? (_) {
+                                setState(() => _sliderDragging = false);
+                              }
                             : null,
                       ),
                     ),

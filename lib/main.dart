@@ -241,49 +241,91 @@ void checkForUpdate(BuildContext context) async {
   }
 }
 
-Future<void> syncRemoteStations() async {
+Future<void> syncRemoteStations({bool forceRefresh = false}) async {
+  final prefs = await SharedPreferences.getInstance();
+  final lastSyncStr = prefs.getString('last_station_sync');
+
+  // If we have cached stations (length > 0) and not forcing a refresh, check the 12-hour rule
+  if (stationsNotifier.value.isNotEmpty && !forceRefresh) {
+    if (lastSyncStr != null) {
+      final lastSync = DateTime.tryParse(lastSyncStr);
+      if (lastSync != null && DateTime.now().difference(lastSync).inHours < 12) {
+        // Cache is fresh (under 12 hours). Mark loading as complete immediately so UI shows carousels.
+        stationsLoadingComplete.value = true;
+        return;
+      }
+    }
+  }
+
   try {
-    final firstPage = await _radioService.fetchRadioStations(
-      page: 1,
-      limit: limitPerPage,
-    );
-    if (firstPage.isNotEmpty) {
-      stationsLoadingComplete.value = false;
-      stationsNotifier.value = firstPage;
-      _loadRemainingStationsInBackground();
+    if (stationsNotifier.value.isEmpty || forceRefresh) {
+      // If we have NO cached data, or we're explicitly pulled-to-refresh,
+      // load page 1 and show it immediately (which triggers progressive loading for remaining pages).
+      final firstPage = await _radioService.fetchRadioStations(
+        page: 1,
+        limit: limitPerPage,
+      );
+      if (firstPage.isNotEmpty) {
+        stationsLoadingComplete.value = false;
+        stationsNotifier.value = firstPage;
+        _loadRemainingStationsInBackground(updateUIProgressively: true);
+      }
+    } else {
+      // BACKGROUND REFRESH: Cache is >12 hours old, but we already have old stations showing.
+      // Accumulate transparently without shrinking the UI back to page 1.
+      _loadRemainingStationsInBackground(updateUIProgressively: false);
     }
   } catch (e) {
     print("❌ API failed, user is using cached data.");
+    stationsLoadingComplete.value = true;
   }
 }
 
-void _loadRemainingStationsInBackground() {
+void _loadRemainingStationsInBackground({required bool updateUIProgressively}) {
   Future.microtask(() async {
-    int currentPage = 2;
+    int currentPage = updateUIProgressively ? 2 : 1;
     bool hasMore = true;
+    
+    // If not updating progressively, we just accumulate locally to avoid UI jank
+    List<RadioStation> backgroundAccumulator = updateUIProgressively 
+        ? List.from(stationsNotifier.value) 
+        : [];
+
     while (hasMore) {
       final stations = await _radioService.fetchRadioStations(
         page: currentPage,
         limit: limitPerPage,
       );
       if (stations.isNotEmpty) {
-        // Merge with current list and fire per-page for progressive rendering.
-        final current = stationsNotifier.value;
-        final merged = [...current, ...stations];
-        final unique = {for (var s in merged) s.id: s}.values.toList();
-        stationsNotifier.value = List.unmodifiable(unique);
+        backgroundAccumulator.addAll(stations);
+
+        if (updateUIProgressively) {
+          final unique = {for (var s in backgroundAccumulator) s.id: s}.values.toList();
+          stationsNotifier.value = List.unmodifiable(unique);
+        }
+
         currentPage++;
         if (stations.length < limitPerPage) hasMore = false;
       } else {
         hasMore = false;
       }
     }
-    // All pages done — triggers final ad injection in the screen.
+
+    // All pages done
+    final unique = {for (var s in backgroundAccumulator) s.id: s}.values.toList();
+    if (!updateUIProgressively) {
+      // Atomic update for background refresh
+      stationsNotifier.value = List.unmodifiable(unique);
+    }
+
     stationsLoadingComplete.value = true;
 
     final box = await Hive.openBox<RadioStation>('cachedStations');
     await box.clear();
-    await box.addAll(stationsNotifier.value);
+    await box.addAll(unique);
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_station_sync', DateTime.now().toIso8601String());
   });
 }
 
@@ -372,20 +414,8 @@ void main() async {
   await _initAudioHandlers();
 
   adConfigProvider = AdConfigProvider(_analyticsService);
-  await adConfigProvider.initialize(isPremiumUser: isPremiumUser.value);
-  globalAdsEnabled = adConfigProvider.globalAdsEnabled;
-
-  await Purchases.setLogLevel(LogLevel.debug);
-  await initializeRevenueCat();
-  await updatePremiumStatus();
-
-  await _analyticsService.registerDevice(
-    deviceId ?? "unknown-device",
-    platform: Platform.operatingSystem,
-  );
-
-  // Boot AdMob SDK only if ads are actually enabled.
-  if (adConfigProvider.globalAdsEnabled) _initializeAdsDelayed();
+  // [globalAdsEnabled] stays false until deferred init completes — UI guards on
+  // [AdConfigProvider.initialized] where needed.
 
   runApp(
     MultiProvider(
@@ -398,8 +428,33 @@ void main() async {
     ),
   );
 
+  // Network-heavy startup: must not block the first frame or native splash handoff.
+  unawaited(_completeDeferredStartup());
+
   setupNotificationSubscription();
   syncRemoteStations();
+}
+
+/// Analytics / ads / subscriptions — runs after [runApp] so landing is not blocked
+/// by HTTP (stations already load from Hive; [syncRemoteStations] refreshes in background).
+Future<void> _completeDeferredStartup() async {
+  try {
+    await adConfigProvider.initialize(isPremiumUser: isPremiumUser.value);
+    globalAdsEnabled = adConfigProvider.globalAdsEnabled;
+
+    await Purchases.setLogLevel(LogLevel.debug);
+    await initializeRevenueCat();
+    await updatePremiumStatus();
+
+    await _analyticsService.registerDevice(
+      deviceId ?? "unknown-device",
+      platform: Platform.operatingSystem,
+    );
+
+    if (adConfigProvider.globalAdsEnabled) _initializeAdsDelayed();
+  } catch (e, st) {
+    debugPrint('Deferred startup failed: $e\n$st');
+  }
 }
 
 class RadioApp extends StatelessWidget {
@@ -409,9 +464,27 @@ class RadioApp extends StatelessWidget {
     const brandViolet = Color(0xFF7C4DFF);
     const brandBlue = Color(0xFF448AFF);
 
+    final TextTheme baseTextTheme = const TextTheme(
+      displayLarge: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+      displayMedium: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+      displaySmall: TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
+      headlineMedium: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+      headlineSmall: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+      titleLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+      titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+      titleSmall: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+      bodyLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.normal),
+      bodyMedium: TextStyle(fontSize: 14, fontWeight: FontWeight.normal),
+      bodySmall: TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+      labelLarge: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      labelMedium: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+      labelSmall: TextStyle(fontSize: 10, fontWeight: FontWeight.w400),
+    ).apply(fontFamily: 'Outfit');
+
     return MaterialApp(
       title: 'GR Radio',
       theme: ThemeData(
+        fontFamily: 'Outfit',
         brightness: Brightness.light,
         useMaterial3: true,
         primaryColor: brandViolet,
@@ -419,18 +492,26 @@ class RadioApp extends StatelessWidget {
         colorScheme: const ColorScheme.light(
           primary: brandViolet,
           secondary: brandBlue,
+          surface: Colors.white,
+          error: Colors.redAccent,
         ),
+        textTheme: baseTextTheme.apply(bodyColor: Colors.black87, displayColor: Colors.black),
         appBarTheme: AppBarTheme(
-          backgroundColor: Colors.white.withOpacity(0.8),
+          backgroundColor: Colors.white.withOpacity(0.9),
           elevation: 0,
+          scrolledUnderElevation: 1,
+          iconTheme: const IconThemeData(color: Colors.black87),
           titleTextStyle: const TextStyle(
+            fontFamily: 'Outfit',
             color: Colors.black,
             fontSize: 22,
             fontWeight: FontWeight.bold,
           ),
         ),
+
       ),
       darkTheme: ThemeData(
+        fontFamily: 'Outfit',
         brightness: Brightness.dark,
         useMaterial3: true,
         primaryColor: brandViolet,
@@ -439,16 +520,23 @@ class RadioApp extends StatelessWidget {
         colorScheme: const ColorScheme.dark(
           primary: brandViolet,
           secondary: brandBlue,
+          surface: Color(0xFF1E1E1E),
+          error: Colors.redAccent,
         ),
+        textTheme: baseTextTheme.apply(bodyColor: Colors.white70, displayColor: Colors.white),
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.transparent,
           elevation: 0,
+          scrolledUnderElevation: 0,
+          iconTheme: IconThemeData(color: Colors.white),
           titleTextStyle: TextStyle(
+            fontFamily: 'Outfit',
             color: Colors.white,
             fontSize: 22,
             fontWeight: FontWeight.bold,
           ),
         ),
+
       ),
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       home: AnimatedSplashScreen(),
@@ -474,9 +562,20 @@ class _MainNavigatorState extends State<MainNavigator> {
 
   void _navigateToMp3RecordingsTab() {
     if (_isRecording) return;
+    if (_isPanelOpen) _panelController.close();
     setState(() {
       _mp3SubTabIndex = 2;
       _selectedIndex = 1;
+    });
+  }
+
+  /// Radio screen "Player" shortcut — resets MP3 sub-tab to Music (0).
+  void _openPlayerTabFromRadio() {
+    if (_isRecording) return;
+    if (_isPanelOpen) _panelController.close();
+    setState(() {
+      _selectedIndex = 1;
+      _mp3SubTabIndex = 0;
     });
   }
 
@@ -647,9 +746,16 @@ class _MainNavigatorState extends State<MainNavigator> {
       return;
     }
 
+    // Same tab — no-op (do not collapse panel or reset MP3 state).
+    if (index == _selectedIndex) return;
+
+    if (_isPanelOpen) _panelController.close();
+
     setState(() {
       _selectedIndex = index;
-      if (index == 1) _mp3SubTabIndex = 0;
+      // Do not reset _mp3SubTabIndex here — ValueKey(_mp3SubTabIndex) would
+      // recreate Mp3PlayerScreen and restart local playback. Use
+      // [_openPlayerTabFromRadio] when opening Player from the Radio screen.
     });
   }
 
@@ -716,7 +822,7 @@ class _MainNavigatorState extends State<MainNavigator> {
                       index: _selectedIndex,
                       children: [
                         RadioPlayerScreen(
-                          onNavigateToMp3Tab: () => _onItemTapped(1),
+                          onNavigateToMp3Tab: _openPlayerTabFromRadio,
                           onRecordingStatusChanged: (v) =>
                               setState(() => _isRecording = v),
                           onNavigateToRecordings: _navigateToMp3RecordingsTab,
@@ -739,16 +845,13 @@ class _MainNavigatorState extends State<MainNavigator> {
                         ),
                       ),
 
-                    IgnorePointer(
-                      ignoring: _isPanelOpen,
-                      child: Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Padding(
-                          padding: EdgeInsets.only(
-                            bottom: MediaQuery.of(context).padding.bottom,
-                          ),
-                          child: _buildFloatingNavigationBar(isDark),
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          bottom: MediaQuery.of(context).padding.bottom,
                         ),
+                        child: _buildFloatingNavigationBar(isDark),
                       ),
                     ),
 

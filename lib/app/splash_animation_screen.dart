@@ -43,7 +43,7 @@ class _AnimatedSplashScreenState extends State<AnimatedSplashScreen>
       }
     });
 
-    Timer(const Duration(seconds: 4), () {
+    Timer(const Duration(seconds: 1), () {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => MainNavigator()),
       );
