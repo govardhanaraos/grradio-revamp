@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:grradio/api/analytics_service_api.dart';
 import 'package:grradio/ads/ad_config_provider.dart';
 import 'package:grradio/ads/banner_ad_widget.dart';
 import 'package:grradio/data/track_metadata.dart';
@@ -46,6 +47,7 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
   bool _hasError = false;
   String _errorMessage = '';
   String searchUrl = '';
+  final AnalyticsServiceAPI _analyticsService = AnalyticsServiceAPI();
   bool _showMiniPlayer = false;
   String _currentSongTitle = '';
 
@@ -91,6 +93,15 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
       final url = '$searchUrl/search.php?q=$encodedQuery';
 
       print('Fetching from: $url');
+      _analyticsService.logActivity(
+        deviceId!,
+        'Fetch Search Results',
+        details: {
+          'query': widget.searchQuery,
+          'language': widget.language,
+          'url': url,
+        },
+      );
 
       final response = await http.get(Uri.parse(url));
 
@@ -144,6 +155,11 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
       _loadingFileDetails = true;
       _expandedFileId = fileId;
     });
+    _analyticsService.logActivity(
+      deviceId!,
+      'Expand File Details',
+      details: {'fileId': fileId},
+    );
 
     try {
       String searchUrl = (widget.language == 'Telugu')
@@ -254,6 +270,15 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
     String coverUrl,
   ) async {
     print('⬇️ Starting download without permissions: $mp3Name');
+    _analyticsService.logActivity(
+      deviceId!,
+      'Start Download',
+      details: {
+        'fileName': mp3Name,
+        'albumName': albumName,
+        'url': url,
+      },
+    );
 
     final downloadKey = '${url.hashCode}-$mp3Name';
 
@@ -309,37 +334,66 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
       final cancelToken = CancelToken();
       _cancelTokens[downloadKey] = cancelToken;
 
-      await dio.download(
-        url,
-        filePath,
-        cancelToken: cancelToken,
-        onReceiveProgress: (received, total) {
-          if (total != -1) {
-            final progress = (received / total) * 100;
-            setState(() {
-              _downloadProgressNotifier.value[downloadKey] = progress;
-              _downloadReceivedNotifier.value[downloadKey] = received;
-              _downloadTotalNotifier.value[downloadKey] = total;
+      const maxAttempts = 3;
+      DioException? lastDownloadError;
+      for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          await dio.download(
+            url,
+            filePath,
+            cancelToken: cancelToken,
+            onReceiveProgress: (received, total) {
+              if (total != -1) {
+                final progress = (received / total) * 100;
+                setState(() {
+                  _downloadProgressNotifier.value[downloadKey] = progress;
+                  _downloadReceivedNotifier.value[downloadKey] = received;
+                  _downloadTotalNotifier.value[downloadKey] = total;
 
-              _downloadProgressNotifier.notifyListeners();
-              _downloadReceivedNotifier.notifyListeners();
-              _downloadTotalNotifier.notifyListeners();
-            });
+                  _downloadProgressNotifier.notifyListeners();
+                  _downloadReceivedNotifier.notifyListeners();
+                  _downloadTotalNotifier.notifyListeners();
+                });
+              }
+            },
+            options: Options(
+              headers: {
+                'User-Agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              },
+              receiveTimeout: Duration(minutes: 5),
+              followRedirects: true,
+              maxRedirects: 5,
+            ),
+          );
+          lastDownloadError = null;
+          break;
+        } on DioException catch (e) {
+          if (e.type == DioExceptionType.cancel) rethrow;
+          lastDownloadError = e;
+          if (attempt < maxAttempts) {
+            final delayMs = 500 * (1 << (attempt - 1));
+            _showSnackbar(
+              'Network issue. Retrying download (${attempt + 1}/$maxAttempts)...',
+              Colors.orange,
+            );
+            await Future<void>.delayed(Duration(milliseconds: delayMs));
           }
-        },
-        options: Options(
-          headers: {
-            'User-Agent':
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          },
-          receiveTimeout: Duration(minutes: 5),
-          followRedirects: true,
-          maxRedirects: 5,
-        ),
-      );
+        }
+      }
+      if (lastDownloadError != null) throw lastDownloadError;
 
       if (await file.exists()) {
         print('✅ Download completed: $filePath');
+        _analyticsService.logActivity(
+          deviceId!,
+          'Download Success',
+          details: {
+            'fileName': mp3Name,
+            'albumName': albumName,
+            'filePath': filePath,
+          },
+        );
 
         // Fetch album cover
         final coverResponse = await http.get(Uri.parse(coverUrl));
@@ -375,6 +429,15 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
         _showSnackbar('Download cancelled: $mp3Name', Colors.orange);
       } else {
         print('❌ Download error: $e');
+        _analyticsService.logActivity(
+          deviceId!,
+          'Download Error',
+          details: {
+            'fileName': mp3Name,
+            'albumName': albumName,
+            'error': e.toString(),
+          },
+        );
         _showSnackbar('Download failed: ${e.toString()}', Colors.red);
       }
     } finally {
@@ -906,6 +969,15 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
           tooltip: 'Download',
         ),
         onTap: () {
+          _analyticsService.logActivity(
+            deviceId!,
+            'Select Search Result Album',
+            details: {
+              'albumId': directory['id'],
+              'albumName': directory['name'],
+              'language': widget.language,
+            },
+          );
           // Navigate to album details screen
           Navigator.push(
             context,
@@ -983,6 +1055,15 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
                       fileId,
                       fileName,
                       searchUrl,
+                    );
+                    _analyticsService.logActivity(
+                      deviceId!,
+                      'Play Search Result Track',
+                      details: {
+                        'trackId': fileId,
+                        'trackTitle': fileName,
+                        'searchQuery': widget.searchQuery,
+                      },
                     );
                   },
                 ),
@@ -1267,6 +1348,12 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
                         setState(() {
                           _showDirectories = !_showDirectories;
                         });
+                        _analyticsService.logActivity(
+                          deviceId!,
+                          _showDirectories
+                              ? 'Expand Albums Gallery'
+                              : 'Collapse Albums Gallery',
+                        );
                       },
                     ),
                     if (_showDirectories)
@@ -1293,6 +1380,10 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
                         setState(() {
                           _showFiles = !_showFiles;
                         });
+                        _analyticsService.logActivity(
+                          deviceId!,
+                          _showFiles ? 'Expand Files Gallery' : 'Collapse Files Gallery',
+                        );
                       },
                     ),
                     if (_showFiles)

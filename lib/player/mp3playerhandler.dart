@@ -9,6 +9,8 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart' as just_audio; // Alias for clarity
 import 'package:rxdart/rxdart.dart'; // Required for Rx.combineLatest4
+import 'package:grradio/api/analytics_service_api.dart';
+import 'package:grradio/main.dart';
 
 // Define the type for the songs coming from your search results
 typedef SongData = Map<String, dynamic>;
@@ -18,6 +20,7 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
   final just_audio.AudioPlayer _player = just_audio.AudioPlayer();
   final _playlist = just_audio.ConcatenatingAudioSource(children: []);
   StreamSubscription? _playerStateSubscription;
+  final AnalyticsServiceAPI _analyticsService = AnalyticsServiceAPI();
 
   // Stored for dynamic URL lookup logic
   String? _currentMp3TargetUrl;
@@ -201,6 +204,16 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
       }
 
       print('INFO: Successfully loaded and set stream for: ${item.title}');
+      _analyticsService.logActivity(
+        deviceId!,
+        'MP3 Track Playback Started',
+        details: {
+          'trackId': item.id,
+          'trackTitle': item.title,
+          'album': item.album,
+          'artist': item.artist,
+        },
+      );
     } catch (e) {
       print('CRITICAL ERROR during source replacement/seek: $e');
       // Final fallback: If modification fails, jump to next track
@@ -423,6 +436,11 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
       });
 
       mediaItem.add(mediaItemTag);
+      _analyticsService.logActivity(
+        deviceId!,
+        'MP3 Single Song Play',
+        details: {'trackId': fileId, 'trackTitle': title, 'url': streamUrl},
+      );
     } catch (e) {
       print('Error playing single song: $e');
     }

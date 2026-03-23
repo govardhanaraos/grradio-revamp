@@ -2,7 +2,7 @@ class Env {
   //static late String apiBaseUrl = 'https://radio-backend-nysq.onrender.com';
   static String apiBaseUrl =
       'https://radio-backend-customer-care-radio.onrender.com';
-  static const String environment = "test";
+  static const String environment = "production";
   static const int connectTimeoutMs = 60000;
   static const int receiveTimeoutMs = 60000;
 
@@ -23,8 +23,8 @@ class Env {
   //sk_CPpSAxwIVwwXPBizbMGkpdAMBJaan
   //test_EWJndZnjbUWEyVNJYEKSuRLKyBS
   static const String revenueCatAndroidPublicSdkKey =
-      'test_EWJndZnjbUWEyVNJYEKSuRLKyBS';
+      'sk_CPpSAxwIVwwXPBizbMGkpdAMBJaan';
   static const String revenueCatIosPublicSdkKey =
-      'test_EWJndZnjbUWEyVNJYEKSuRLKyBS';
+      'sk_CPpSAxwIVwwXPBizbMGkpdAMBJaan';
   static const String revenueCatEntitlementId = 'GR Radio Pro';
 }

@@ -4,6 +4,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:grradio/masstamilan/data/massteluguservice.dart';
 import 'package:grradio/masstamilan/data/mp3queplayer.dart';
+import 'package:grradio/api/analytics_service_api.dart';
+import 'package:grradio/main.dart';
 import 'package:grradio/masstamilan/presentation/modernminiplayer.dart';
 import 'package:grradio/more/downloadmanagerscreen.dart';
 import 'package:path_provider/path_provider.dart';
@@ -27,6 +29,7 @@ class _AlbumDetailsPageState extends State<AlbumDetailsPage> {
   late Future<AlbumDetails> future;
   String albumArtURL = '';
   String albumName = '';
+  final AnalyticsServiceAPI _analyticsService = AnalyticsServiceAPI();
 
   final ValueNotifier<Map<String, double>> downloadProgressNotifier =
       ValueNotifier<Map<String, double>>({});
@@ -229,6 +232,15 @@ class _AlbumDetailsPageState extends State<AlbumDetailsPage> {
                       url: t.download320 ?? t.download128!,
                       imageUrl: albumArtURL,
                     );
+                    _analyticsService.logActivity(
+                      deviceId!,
+                      "Play Masstamilan Track",
+                      details: {
+                        "trackName": t.name,
+                        "albumName": albumName,
+                        "language": widget.language,
+                      },
+                    );
                   },
                 ),
               ],
@@ -320,6 +332,17 @@ class _AlbumDetailsPageState extends State<AlbumDetailsPage> {
       ),
     );
 
+    _analyticsService.logActivity(
+      deviceId!,
+      "Start Masstamilan Download",
+      details: {
+        "fileName": fileName,
+        "albumName": albumName,
+        "url": url,
+        "language": widget.language,
+      },
+    );
+
     try {
       final directory = await getApplicationDocumentsDirectory();
       final musicDir = Directory('${directory.path}/Music');
@@ -380,10 +403,29 @@ class _AlbumDetailsPageState extends State<AlbumDetailsPage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("Download complete")));
+      _analyticsService.logActivity(
+        deviceId!,
+        "Download Masstamilan Success",
+        details: {
+          "fileName": fileName,
+          "albumName": albumName,
+          "language": widget.language,
+        },
+      );
     } catch (e) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text("Download failed: $e")));
+      _analyticsService.logActivity(
+        deviceId!,
+        "Download Masstamilan Failure",
+        details: {
+          "fileName": fileName,
+          "albumName": albumName,
+          "error": e.toString(),
+          "language": widget.language,
+        },
+      );
     } finally {
       final done = Map<String, bool>.from(isDownloadingNotifier.value)
         ..remove(downloadKey);

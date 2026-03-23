@@ -12,6 +12,8 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:grradio/api/analytics_service_api.dart';
+import 'package:grradio/main.dart';
 
 class RadioHandlerImpl extends BaseAudioHandler
     with SeekHandler
@@ -52,6 +54,7 @@ class RadioHandlerImpl extends BaseAudioHandler
   // Dio components for stream recording
   final Dio _dio = Dio();
   CancelToken? _recordingCancelToken;
+  final _analyticsService = AnalyticsServiceAPI();
 
   Stream<Duration> get positionStream => _player.positionStream;
 
@@ -239,6 +242,15 @@ class RadioHandlerImpl extends BaseAudioHandler
   Future<void> _playLocalEntry(Map<String, String> entry) async {
     final path = entry['path']!;
     final title = entry['title']!;
+
+    _analyticsService.logActivity(
+      deviceId!,
+      'Play Local File',
+      details: {
+        'title': title,
+        'path': path,
+      },
+    );
 
     // Cancel any radio recovery — we are now in local-file mode.
     _recoveryTimer?.cancel();
@@ -477,6 +489,14 @@ class RadioHandlerImpl extends BaseAudioHandler
       final status = await Permission.audio.request();
       if (status.isGranted || status.isLimited) {
         _isRecording = true;
+        _analyticsService.logActivity(
+          deviceId!,
+          'Start Recording',
+          details: {
+            'stationId': mediaItem.id,
+            'stationName': mediaItem.title,
+          },
+        );
         _sendRecordStatus(true);
         await _startRecording(mediaItem);
       } else {
@@ -485,6 +505,14 @@ class RadioHandlerImpl extends BaseAudioHandler
         return;
       }
     } else {
+      _analyticsService.logActivity(
+        deviceId!,
+        'Stop Recording',
+        details: {
+          'stationId': mediaItem?.id,
+          'stationName': mediaItem?.title,
+        },
+      );
       await _stopRecording();
       _isRecording = false;
       _sendRecordStatus(false);
@@ -920,6 +948,16 @@ class RadioHandlerImpl extends BaseAudioHandler
       _isRecovering = false;
       _lastSuccessfulPlayback = DateTime.now();
       customEvent.add({'event': 'playback_started', 'station': station.name});
+      _analyticsService.logActivity(
+        deviceId!,
+        'Radio Playback Started',
+        details: {
+          'stationId': station.id,
+          'stationName': station.name,
+          'isRecovery': isRecovery,
+          'url': _lastExtractedStreamUrl,
+        },
+      );
     } catch (error) {
       if (_isSSLError(error)) {
         await _playWithSSLWorkaround(
@@ -971,6 +1009,15 @@ class RadioHandlerImpl extends BaseAudioHandler
         await _player.play();
         _updatePlaybackState();
         customEvent.add({'event': 'playback_started', 'station': station.name});
+        _analyticsService.logActivity(
+          deviceId!,
+          'Radio Playback Started (Alternative)',
+          details: {
+            'stationId': station.id,
+            'stationName': station.name,
+            'url': httpUrl,
+          },
+        );
         return;
       } catch (e) {}
     }
@@ -981,6 +1028,15 @@ class RadioHandlerImpl extends BaseAudioHandler
         await _player.play();
         _updatePlaybackState();
         customEvent.add({'event': 'playback_started', 'station': station.name});
+        _analyticsService.logActivity(
+          deviceId!,
+          'Radio Playback Started (SSL Workaround)',
+          details: {
+            'stationId': station.id,
+            'stationName': station.name,
+            'url': altUrl,
+          },
+        );
         return;
       } catch (e) {}
     }
@@ -990,6 +1046,15 @@ class RadioHandlerImpl extends BaseAudioHandler
       'error':
           'Stream unavailable due to security restrictions. Please try another station.',
     });
+    _analyticsService.logActivity(
+      deviceId!,
+      'Radio Playback Error (SSL)',
+      details: {
+        'stationId': station.id,
+        'stationName': station.name,
+        'error': 'Security restrictions / SSL issues',
+      },
+    );
   }
 
   Future<List<String>> _getAlternativeUrls(RadioStation station) async {
@@ -1084,6 +1149,15 @@ class RadioHandlerImpl extends BaseAudioHandler
       'station': station.name,
       'error': 'Unable to play this station. The stream may be unavailable.',
     });
+    _analyticsService.logActivity(
+      deviceId!,
+      'Radio Playback Error',
+      details: {
+        'stationId': station.id,
+        'stationName': station.name,
+        'error': 'Unable to play station after fallbacks',
+      },
+    );
   }
 
   Future<void> _playIcecastShoutcastStream(
@@ -1123,6 +1197,15 @@ class RadioHandlerImpl extends BaseAudioHandler
             'event': 'playback_started',
             'station': station.name,
           });
+          _analyticsService.logActivity(
+            deviceId!,
+            'Radio Playback Started (Icecast/Shoutcast)',
+            details: {
+              'stationId': station.id,
+              'stationName': station.name,
+              'url': variation,
+            },
+          );
           return;
         }
       } catch (e) {}
@@ -1139,6 +1222,15 @@ class RadioHandlerImpl extends BaseAudioHandler
         _recoveryTimer?.cancel();
         _isRecovering = false;
         customEvent.add({'event': 'playback_started', 'station': station.name});
+        _analyticsService.logActivity(
+          deviceId!,
+          'Radio Playback Started (Icecast Fallback)',
+          details: {
+            'stationId': station.id,
+            'stationName': station.name,
+            'url': cleanUrl,
+          },
+        );
         return;
       }
     } catch (e) {}
@@ -1148,6 +1240,15 @@ class RadioHandlerImpl extends BaseAudioHandler
       'error':
           'Icecast/Shoutcast stream format not supported. Please try another station.',
     });
+    _analyticsService.logActivity(
+      deviceId!,
+      'Radio Playback Error (Icecast)',
+      details: {
+        'stationId': station.id,
+        'stationName': station.name,
+        'error': 'Icecast/Shoutcast format not supported',
+      },
+    );
   }
 
   Future<void> _trySimpleRadioGardenFallback(RadioStation station) async {

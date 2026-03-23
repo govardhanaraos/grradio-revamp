@@ -15,6 +15,7 @@ import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:grradio/api/analytics_service_api.dart';
 
 class OldMp3Browser extends StatefulWidget {
   final String initialUrl;
@@ -32,6 +33,7 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
   List<PaginationItem> _pagination = [];
   bool _isLoading = false;
   List<String> _breadcrumbs = [];
+  final AnalyticsServiceAPI _analyticsService = AnalyticsServiceAPI();
 
   Map<String, double> _downloadProgress = {};
   Map<String, bool> _isDownloading = {};
@@ -63,6 +65,11 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
 
     try {
       print('🔍 Loading URL: $url');
+      _analyticsService.logActivity(
+        deviceId!,
+        'Old MP3 Browser: Load Page',
+        details: {'url': url},
+      );
       final response = await http.get(Uri.parse(url));
       print('📥 Response status: ${response.statusCode}');
 
@@ -336,7 +343,11 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
 
   Future<void> _downloadMp3NoPermission(Mp3File mp3File) async {
     print('⬇️ Starting download without permissions: ${mp3File.name}');
-
+    _analyticsService.logActivity(
+      deviceId!,
+      'Old MP3 Browser: Start Download',
+      details: {'fileName': mp3File.name, 'url': mp3File.url},
+    );
     final downloadKey = '${Uri.parse(mp3File.url).hashCode}-${mp3File.name}';
 
     // Prevent duplicate downloads
@@ -429,6 +440,11 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
 
       if (await file.exists()) {
         print('✅ Download completed: $filePath');
+        _analyticsService.logActivity(
+          deviceId!,
+          'Old MP3 Browser: Download Success',
+          details: {'fileName': mp3File.name, 'filePath': filePath},
+        );
         _showSnackbar('Downloaded: $fileName to Music folder', Colors.green);
       } else {
         throw Exception('File download verification failed');
@@ -440,6 +456,11 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
         _showSnackbar('Download cancelled: ${mp3File.name}', Colors.orange);
       } else {
         print('❌ Download error: $e');
+        _analyticsService.logActivity(
+          deviceId!,
+          'Old MP3 Browser: Download Error',
+          details: {'fileName': mp3File.name, 'error': e.toString()},
+        );
         _showSnackbar('Download failed: ${e.toString()}', Colors.red);
       }
     } finally {
@@ -595,6 +616,11 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
 
   void _navigateToDirectory(String url) {
     print('📁 Navigating to directory: $url');
+    _analyticsService.logActivity(
+      deviceId!,
+      'Old MP3 Browser: Navigate Directory',
+      details: {'targetUrl': url},
+    );
     _loadPage(url);
   }
 

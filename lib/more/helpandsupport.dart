@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:grradio/more/contactsupport.dart';
 import 'package:grradio/more/faq_screen.dart';
 import 'package:grradio/more/feedback_form_screen.dart';
+import 'package:grradio/api/analytics_service_api.dart';
+import 'package:grradio/main.dart';
 
 class HelpSupportScreen extends StatefulWidget {
   const HelpSupportScreen({Key? key}) : super(key: key);
@@ -109,30 +111,39 @@ class _HelpSupportScreenState extends State<HelpSupportScreen>
             icon: Icons.question_answer_rounded,
             title: 'FAQ',
             subtitle: 'Frequently asked questions',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const FAQScreen()),
-            ),
+            onTap: () {
+              AnalyticsServiceAPI().logActivity(deviceId!, "Navigate to FAQ");
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const FAQScreen()),
+              );
+            },
           ),
           _buildItem(
             index: 1,
             icon: Icons.support_agent_rounded,
             title: 'Contact Support',
             subtitle: 'Reach out to our support team',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ContactSupportScreen()),
-            ),
+            onTap: () {
+              AnalyticsServiceAPI().logActivity(deviceId!, "Navigate to Contact Support");
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ContactSupportScreen()),
+              );
+            },
           ),
           _buildItem(
             index: 2,
             icon: Icons.feedback_rounded,
             title: 'Submit Feedback',
             subtitle: 'Tell us your issue or suggestion',
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => FeedbackFormScreen()),
-            ),
+            onTap: () {
+              AnalyticsServiceAPI().logActivity(deviceId!, "Navigate to Submit Feedback");
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => FeedbackFormScreen()),
+              );
+            },
           ),
         ],
       ),

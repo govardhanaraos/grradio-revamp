@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:grradio/masstamilan/data/masstelugualbum.dart';
 import 'package:grradio/masstamilan/data/massteluguservice.dart';
 import 'package:grradio/masstamilan/presentation/albumdetailsview.dart';
+import 'package:grradio/api/analytics_service_api.dart';
+import 'package:grradio/main.dart';
 
 class AlbumListPage extends StatefulWidget {
   final String language;
@@ -19,6 +21,7 @@ class AlbumListPage extends StatefulWidget {
 
 class _AlbumListPageState extends State<AlbumListPage> {
   final AlbumApi api = AlbumApi();
+  final AnalyticsServiceAPI _analyticsService = AnalyticsServiceAPI();
 
   final List<Album> _albums = [];
   Pagination? _pagination;
@@ -110,6 +113,12 @@ class _AlbumListPageState extends State<AlbumListPage> {
                   return;
                 }
 
+                _analyticsService.logActivity(
+                  deviceId!,
+                  "Search Masstamilan Albums",
+                  details: {"query": query, "language": widget.language},
+                );
+
                 _loadPage("/search?keyword=$query&commit=Search");
               },
             ),
@@ -151,6 +160,15 @@ class _AlbumListPageState extends State<AlbumListPage> {
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
                     onTap: () {
+                      _analyticsService.logActivity(
+                        deviceId!,
+                        "Select Masstamilan Album",
+                        details: {
+                          "albumName": album.albumName,
+                          "albumArt": album.albumArt,
+                          "language": widget.language,
+                        },
+                      );
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -257,9 +275,14 @@ class _AlbumListPageState extends State<AlbumListPage> {
         final isCurrent = p.page == _pagination!.currentPage;
 
         return ElevatedButton(
-          onPressed: isCurrent || p.url == null
+          onPressed: isCurrent
               ? null
               : () {
+                  _analyticsService.logActivity(
+                    deviceId!,
+                    "Navigate Masstamilan Pagination",
+                    details: {"page": p.page, "language": widget.language},
+                  );
                   _loadPage(p.url!);
                 },
           style: ElevatedButton.styleFrom(

@@ -141,6 +141,15 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
         _songs = songs;
         _isLoading = false;
       });
+      _analyticsService.logActivity(
+        deviceId!,
+        "Album Details Parsed Successfully",
+        details: {
+          "albumId": widget.albumId,
+          "albumName": albumInfo['title'],
+          "songCount": songs.length,
+        },
+      );
 
       print('Parsed album info: $albumInfo');
       print('Parsed ${songs.length} songs');
@@ -474,6 +483,15 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
         deviceId!,
         "Fetching page $page from: $url",
       );
+      _analyticsService.logActivity(
+        deviceId!,
+        "Navigating to Album Page",
+        details: {
+          "albumId": widget.albumId,
+          "albumName": widget.albumName,
+          "page": page,
+        },
+      );
 
       final response = await http.get(Uri.parse(url));
 
@@ -747,6 +765,15 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
     String coverUrl,
   ) async {
     print('⬇️ Starting download without permissions: $mp3Name');
+    _analyticsService.logActivity(
+      deviceId!,
+      'Start Download',
+      details: {
+        'fileName': mp3Name,
+        'albumName': albumName,
+        'url': url,
+      },
+    );
 
     final downloadKey = '${url.hashCode}-$mp3Name';
 
@@ -834,6 +861,15 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
 
       if (await file.exists()) {
         print('✅ Download completed: $filePath');
+        _analyticsService.logActivity(
+          deviceId!,
+          'Download Success',
+          details: {
+            'fileName': mp3Name,
+            'albumName': albumName,
+            'filePath': filePath,
+          },
+        );
 
         // Fetch album cover
         final coverResponse = await http.get(Uri.parse(coverUrl));
@@ -869,6 +905,15 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
         _showSnackbar('Download cancelled: $mp3Name', Colors.orange);
       } else {
         print('❌ Download error: $e');
+        _analyticsService.logActivity(
+          deviceId!,
+          'Download Error',
+          details: {
+            'fileName': mp3Name,
+            'albumName': albumName,
+            'error': e.toString(),
+          },
+        );
         _showSnackbar('Download failed: ${e.toString()}', Colors.red);
       }
     } finally {
@@ -1452,7 +1497,18 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
                   : CupertinoIcons.chevron_down,
               color: Theme.of(context).textTheme.bodyLarge!.color,
             ),
-            onTap: () => _fetchFileDetails(file['id']),
+            onTap: () {
+              _analyticsService.logActivity(
+                deviceId!,
+                "Expand Song Details",
+                details: {
+                  "trackId": file['id'],
+                  "trackTitle": file['title'],
+                  "albumId": widget.albumId,
+                },
+              );
+              _fetchFileDetails(file['id']);
+            },
           ),
 
           // 💡 NEW: Expanded section with file details

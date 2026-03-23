@@ -122,7 +122,7 @@ class AnalyticsServiceAPI {
     String event, {
     Map<String, dynamic>? details,
   }) async {
-    final uri = Uri.parse('$_baseUrl$_analyticsEndpoint/log');
+    final uri = Uri.parse('$_baseUrl$_analyticsEndpoint/pg/log');
     try {
       final response = await http.post(
         uri,
@@ -134,7 +134,7 @@ class AnalyticsServiceAPI {
           'timestamp': DateTime.now().toIso8601String(),
         }),
       );
-      print('Log response: ${response.body}');
+      print('Log response (PG): ${response.body}');
     } catch (e) {
       print('Error logging activity: $e');
     }

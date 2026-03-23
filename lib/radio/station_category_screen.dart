@@ -1,7 +1,7 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
+import 'package:grradio/api/analytics_service_api.dart';
 import 'package:grradio/main.dart';
 import 'package:grradio/radio/radiostation.dart';
 
@@ -10,12 +10,14 @@ class StationCategoryScreen extends StatelessWidget {
   final List<RadioStation> stations;
   final dynamic audioHandler;
 
-  const StationCategoryScreen({
+  StationCategoryScreen({
     Key? key,
     required this.title,
     required this.stations,
     required this.audioHandler,
   }) : super(key: key);
+
+  final AnalyticsServiceAPI _analyticsService = AnalyticsServiceAPI();
 
   @override
   Widget build(BuildContext context) {
@@ -107,6 +109,16 @@ class StationCategoryScreen extends StatelessWidget {
     final shuffledList = List<RadioStation>.from(stations)..shuffle();
     final randomStation = shuffledList.first;
 
+    _analyticsService.logActivity(
+      deviceId ?? 'unknown',
+      'Shuffle Play Category',
+      details: {
+        'category': title,
+        'stationId': randomStation.id,
+        'stationName': randomStation.name,
+      },
+    );
+
     // FIX: Use the global variable directly here
     globalRadioAudioHandler.playFromMediaId(randomStation.id);
 
@@ -131,6 +143,15 @@ class StationCategoryScreen extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         HapticFeedback.lightImpact();
+        _analyticsService.logActivity(
+          deviceId ?? 'unknown',
+          'Play Station from Category',
+          details: {
+            'stationId': station.id,
+            'stationName': station.name,
+            'category': title,
+          },
+        );
         globalRadioAudioHandler.playFromMediaId(station.id);
       },
       child: Column(
@@ -184,8 +205,8 @@ class StationCategoryScreen extends StatelessWidget {
           Text(
             station.language ?? "Radio",
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
           ),
         ],
       ),

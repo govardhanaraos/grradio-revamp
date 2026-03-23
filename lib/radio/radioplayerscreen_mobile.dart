@@ -1,9 +1,10 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:math' show Random;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:grradio/api/analytics_service_api.dart';
 import 'package:grradio/ads/ad_config_provider.dart';
 import 'package:grradio/ads/ad_widgets.dart';
 import 'package:grradio/main.dart';
@@ -15,6 +16,7 @@ import 'package:grradio/widgets/radio_animated_icons.dart';
 import 'package:grradio/widgets/section_header.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:grradio/l10n/app_localizations.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  PROGRESSIVE DISPLAY WITH INCREMENTAL AD INJECTION
@@ -157,6 +159,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
     with TickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  final AnalyticsServiceAPI _analyticsService = AnalyticsServiceAPI();
   List<RadioStation> _trendingStations = [];
   List<RadioStation> _forYouStations = [];
 
@@ -457,8 +460,19 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
 
   Future<void> _toggleFavourite(RadioStation station) async {
     HapticFeedback.lightImpact();
+    final isAdding = !_favouriteIds.contains(station.id);
+    _analyticsService.logActivity(
+      deviceId!,
+      'Toggle Favourite',
+      details: {
+        'stationId': station.id,
+        'stationName': station.name,
+        'action': isAdding ? 'Add' : 'Remove',
+      },
+    );
+
     setState(() {
-      if (_favouriteIds.contains(station.id)) {
+      if (!isAdding) {
         _favouriteIds.remove(station.id);
       } else {
         _favouriteIds.add(station.id);
@@ -469,6 +483,11 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
   }
 
   void _navigateToCategory(String title, List<RadioStation> stations) {
+    _analyticsService.logActivity(
+      deviceId!,
+      'Navigate to Category',
+      details: {'category': title},
+    );
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -494,6 +513,16 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
 
   void _playStation(RadioStation station, {bool rememberRecent = true}) {
     HapticFeedback.lightImpact();
+    _analyticsService.logActivity(
+      deviceId!,
+      'Play Station',
+      details: {
+        'stationId': station.id,
+        'stationName': station.name,
+        'language': station.language,
+        'genre': station.genre,
+      },
+    );
     globalRadioAudioHandler.playFromMediaId(station.id);
     if (rememberRecent) {
       _rememberRecentStation(station);
@@ -579,6 +608,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
 
   void _scrollToTop() {
     HapticFeedback.lightImpact();
+    _analyticsService.logActivity(deviceId!, 'Scroll to Top');
     _scrollController.animateTo(
       0,
       duration: const Duration(milliseconds: 450),
@@ -588,10 +618,12 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
 
   Future<void> _onRefresh() async {
     HapticFeedback.mediumImpact();
+    _analyticsService.logActivity(deviceId!, 'Pull to Refresh');
     // Reset all state so the progressive+incremental cycle restarts cleanly.
     setState(() {
       _isLoaded = false;
       _adsInjected = false;
+      _didAutoResume = false;
       _allStations = [];
       _mixedItems = [];
       _adPlacement = null;
@@ -631,12 +663,8 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
 
   @override
   Widget build(BuildContext context) {
-    // isDark and ad flags are stored as local state (_isDark, _showBanner, etc.).
-    // We intentionally do NOT call Provider.of, context.watch, or Theme.of here.
-    // Any of those register this widget as a listener and cause spurious rebuilds
-    // during station page loading, which changes the body column structure mid-frame
-    // and triggers the _InactiveElements.remove assertion.
     final isDark = _isDark;
+    final l = AppLocalizations.of(context)!;
 
     final items = _isLoaded ? _filteredItems() : <_ListItem>[];
     final stations = items
@@ -645,6 +673,15 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
         .toList();
     final favourites = stations
         .where((s) => _favouriteIds.contains(s.id))
+        .toList();
+    final recentPlayed = _recentStationIds
+        .map(
+          (id) => _allStations
+              .where((s) => s.id == id)
+              .cast<RadioStation?>()
+              .firstWhere((s) => s != null, orElse: () => null),
+        )
+        .whereType<RadioStation>()
         .toList();
 
     return Scaffold(
@@ -684,21 +721,45 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
+                                   SectionHeader(
+                                     title: "♥ ${l.sectionFavourites}",
+                                     onSeeAll: () => _navigateToCategory(
+                                       l.sectionFavourites,
+                                       favourites,
+                                     ),
+                                   ),
+                                   ValueListenableBuilder<String?>(
+                                     valueListenable: _currentMediaIdVN,
+                                     builder: (context, currentId, _) {
+                                       return HorizontalStationList(
+                                         stations: favourites,
+                                         currentMediaId: currentId,
+                                         onPlay: _playStation,
+                                         onRemoveFavourite: _toggleFavourite,
+                                       );
+                                     },
+                                   ),
+                                 ],
+                              ),
+                            ),
+                            Visibility(
+                              visible: recentPlayed.isNotEmpty,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
                                   SectionHeader(
-                                    title: '❤️ Favourites',
+                                    title: l.sectionRecentlyPlayed,
                                     onSeeAll: () => _navigateToCategory(
-                                      'Favourites',
-                                      favourites,
+                                      l.sectionRecentlyPlayed, recentPlayed,
                                     ),
                                   ),
                                   ValueListenableBuilder<String?>(
                                     valueListenable: _currentMediaIdVN,
                                     builder: (context, currentId, _) {
                                       return HorizontalStationList(
-                                        stations: favourites,
+                                        stations: recentPlayed,
                                         currentMediaId: currentId,
                                         onPlay: _playStation,
-                                        onRemoveFavourite: _toggleFavourite,
                                       );
                                     },
                                   ),
@@ -707,9 +768,9 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                             ),
                             // For You
                             SectionHeader(
-                              title: 'For You',
+                              title: l.sectionForYou,
                               onSeeAll: () => _navigateToCategory(
-                                'For You',
+                                l.sectionForYou,
                                 _forYouStations,
                               ),
                             ),
@@ -728,9 +789,9 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                               _buildShimmerCarousel(isDark),
                             // Trending
                             SectionHeader(
-                              title: 'Trending Now',
+                              title: l.sectionTrending,
                               onSeeAll: () => _navigateToCategory(
-                                'Trending',
+                                l.sectionTrending,
                                 _trendingStations,
                               ),
                             ),
@@ -750,10 +811,10 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                             // All Stations — tighter bottom padding so the vertical
                             // list sits closer to the title (matches carousel density).
                             SectionHeader(
-                              title: 'All Stations',
+                              title: l.sectionAllStations,
                               padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                               onSeeAll: () =>
-                                  _navigateToCategory('All Stations', stations),
+                                  _navigateToCategory(l.sectionAllStations, stations),
                             ),
                             // Station list — regular ListView, not a sliver.
                             // Item count is fixed after _onLoadComplete.
@@ -862,6 +923,11 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
             child: GestureDetector(
               onTap: () {
                 HapticFeedback.lightImpact();
+                _analyticsService.logActivity(
+                  deviceId!,
+                  'Select Language Filter',
+                  details: {'language': lang},
+                );
                 setState(() {
                   _selectedLanguage = lang;
                   _cachedFilteredItems = null;
@@ -916,6 +982,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                       GestureDetector(
                         onTap: () {
                           HapticFeedback.lightImpact();
+                          _analyticsService.logActivity(deviceId!, 'Clear Language Filter');
                           setState(() {
                             _selectedLanguage = 'All';
                             _cachedFilteredItems = null;
@@ -949,6 +1016,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
   Widget _buildEmptyState() {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 60),
       child: Column(
@@ -962,14 +1030,14 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
           const SizedBox(height: 16),
           Text(
             _searchQuery.isNotEmpty
-                ? 'No stations match "$_searchQuery"'
-                : 'No $_selectedLanguage stations found',
+                ? l.noStationsMatch(_searchQuery)
+                : l.noLanguageStations(_selectedLanguage),
             textAlign: TextAlign.center,
             style: tt.titleMedium?.copyWith(color: cs.onSurface),
           ),
           const SizedBox(height: 8),
           Text(
-            'Try a different search or language filter',
+            l.tryDifferentFilter,
             textAlign: TextAlign.center,
             style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
           ),
@@ -984,7 +1052,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
               });
             },
             icon: const Icon(Icons.clear, size: 16),
-            label: const Text('Clear filters'),
+            label: Text(l.clearFilters),
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFF7C4DFF),
               side: const BorderSide(color: Color(0xFF7C4DFF)),
@@ -1001,6 +1069,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
   Widget _buildSliverAppBar() {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final l = AppLocalizations.of(context)!;
     final mq = MediaQuery.of(context);
     final wideLandscape =
         mq.orientation == Orientation.landscape && mq.size.width >= 600;
@@ -1042,7 +1111,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
           child: Row(
             children: [
               Text(
-                'Discover',
+                l.discoverHeader,
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                       fontFamily: 'Outfit',
                       color: cs.onSurface,
@@ -1112,6 +1181,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
   Widget _buildSearchBar() {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final l = AppLocalizations.of(context)!;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1148,7 +1218,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                 ? cs.primary
                 : cs.onSurfaceVariant,
           ),
-          hintText: 'Search stations...',
+          hintText: l.searchStations,
           hintStyle: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
           border: InputBorder.none,
           suffixIcon: _searchQuery.isNotEmpty
@@ -1159,6 +1229,8 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                     size: 18,
                   ),
                   onPressed: () {
+                    HapticFeedback.lightImpact();
+                    _analyticsService.logActivity(deviceId!, 'Clear Search Query');
                     _searchDebounce?.cancel();
                     _searchController.clear();
                     setState(() {

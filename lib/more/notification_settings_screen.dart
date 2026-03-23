@@ -1,6 +1,8 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:grradio/api/analytics_service_api.dart';
+import 'package:grradio/main.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({Key? key}) : super(key: key);
@@ -44,9 +46,11 @@ class _NotificationSettingsScreenState
 
       if (value) {
         await FirebaseMessaging.instance.subscribeToTopic('radio_alerts');
+        AnalyticsServiceAPI().logActivity(deviceId!, "Subscribe to Notifications", details: {"topic": "radio_alerts"});
         debugPrint('Subscribed to notifications');
       } else {
         await FirebaseMessaging.instance.unsubscribeFromTopic('radio_alerts');
+        AnalyticsServiceAPI().logActivity(deviceId!, "Unsubscribe from Notifications", details: {"topic": "radio_alerts"});
         debugPrint('Unsubscribed from notifications');
       }
 

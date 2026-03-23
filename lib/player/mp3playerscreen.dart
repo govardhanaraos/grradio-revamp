@@ -185,6 +185,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
   bool _showInterstitial = false;
   int _interstitialEvery = 5;
   int _tapCount = 0;
+  final List<Map<String, String>> _manualQueue = [];
   InListPlacement _mp3ListPlacement = const InListPlacement();
   InListPlacement _downloadsListPlacement = const InListPlacement();
   InListPlacement _recordingsListPlacement = const InListPlacement();
@@ -200,12 +201,19 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
       initialIndex: widget.initialTabIndex,
     );
     _tabController.addListener(() {
-      if (mounted)
+      if (mounted) {
+        final labels = ['Music', 'Downloads', 'Recordings'];
+        _analyticsService.logActivity(
+          deviceId!,
+          'MP3 Player Tab Switch',
+          details: {'tab': labels[_tabController.index]},
+        );
         setState(() {
           _searchVisible = false;
           _isSelecting = false;
           _selectedIds.clear();
         });
+      }
     });
     for (final sc in _scrollControllers) sc.addListener(_onScrollChanged);
     for (int i = 0; i < 3; i++) {
@@ -291,6 +299,11 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
         duration: const Duration(milliseconds: 450),
         curve: Curves.easeOutCubic,
       );
+    _analyticsService.logActivity(
+      deviceId!,
+      'MP3 Player Scroll to Top',
+      details: {'tab': ['Music', 'Downloads', 'Recordings'][_tabController.index]},
+    );
   }
 
   String _formatBytes(int bytes, int decimals) {
@@ -592,6 +605,17 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
       }
     }
 
+    final fileName = _titleOf(item);
+    _analyticsService.logActivity(
+      deviceId!,
+      'Play Local File',
+      details: {
+        'fileName': fileName,
+        'path': _idOf(item),
+        'category': ['Music', 'Downloads', 'Recordings'][_tabController.index],
+      },
+    );
+
     // Fire interstitial every N taps — same pattern as radio screen
     if (_showInterstitial) {
       _tapCount++;
@@ -618,6 +642,14 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
       _isSelecting = true;
       _selectedIds.add(_idOf(item));
     });
+    _analyticsService.logActivity(
+      deviceId!,
+      'MP3 Player Enter Select Mode',
+      details: {
+        'firstItem': _titleOf(item),
+        'category': ['Music', 'Downloads', 'Recordings'][_tabController.index],
+      },
+    );
   }
 
   void _onLongPress(dynamic item, bool isRec, bool isDl) {
@@ -669,7 +701,14 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
       _isSelecting = false;
     });
     HapticFeedback.lightImpact();
-    _showSnackBar('$count file${count > 1 ? 's' : ''} deleted.');
+    _analyticsService.logActivity(
+      deviceId!,
+      'Bulk Delete Files',
+      details: {
+        'count': count,
+        'category': isRec ? 'Recordings' : 'Downloads',
+      },
+    );
     if (isRec)
       _loadLocalRecordings();
     else
@@ -712,6 +751,10 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
               Navigator.pop(context);
               _onFileTap(item);
             }),
+            _ctxTile(Icons.queue_music_rounded, 'Add to Queue', () {
+              Navigator.pop(context);
+              _addToQueue(item);
+            }),
             if (isRec || isDl)
               _ctxTile(Icons.ios_share_rounded, 'Share', () {
                 Navigator.pop(context);
@@ -736,6 +779,102 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
         ),
       ),
     );
+  }
+
+  void _addToQueue(dynamic item) {
+    final path = _idOf(item);
+    final title = _titleOf(item);
+    if (path.isEmpty) return;
+    final exists = _manualQueue.any((e) => e['path'] == path);
+    if (exists) {
+      _showSnackBar('Already in queue.');
+      return;
+    }
+    setState(() {
+      _manualQueue.add({'path': path, 'title': title});
+    });
+    _analyticsService.logActivity(
+      deviceId!,
+      'Add to Local Queue',
+      details: {'title': title, 'path': path},
+    );
+    _showSnackBar('"$title" added to queue.');
+  }
+
+  void _playManualQueue() {
+    if (_manualQueue.isEmpty) {
+      _showSnackBar('Queue is empty.');
+      return;
+    }
+    globalRadioAudioHandler.loadLocalQueueAndPlay(_manualQueue, 0);
+    _analyticsService.logActivity(
+      deviceId!,
+      'Play Local Queue',
+      details: {'queueSize': _manualQueue.length},
+    );
+    _showSnackBar('Playing queued tracks.');
+  }
+
+  void _showSleepPresets() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.timer_10_rounded),
+              title: const Text('Sleep in 10 minutes'),
+              onTap: () => _setSleepFromPreset(10),
+            ),
+            ListTile(
+              leading: const Icon(Icons.timer_10_rounded),
+              title: const Text('Sleep in 20 minutes'),
+              onTap: () => _setSleepFromPreset(20),
+            ),
+            ListTile(
+              leading: const Icon(Icons.timer_10_rounded),
+              title: const Text('Sleep in 30 minutes'),
+              onTap: () => _setSleepFromPreset(30),
+            ),
+            ListTile(
+              leading: const Icon(Icons.timer_10_rounded),
+              title: const Text('Sleep in 45 minutes'),
+              onTap: () => _setSleepFromPreset(45),
+            ),
+            ListTile(
+              leading: const Icon(Icons.timer_10_rounded),
+              title: const Text('Sleep in 60 minutes'),
+              onTap: () => _setSleepFromPreset(60),
+            ),
+            ListTile(
+              leading: const Icon(Icons.timer_off_rounded),
+              title: const Text('Cancel sleep timer'),
+              onTap: () async {
+                Navigator.pop(context);
+                await globalRadioAudioHandler.cancelSleepTimer();
+                _showSnackBar('Sleep timer cancelled.');
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _setSleepFromPreset(int minutes) async {
+    Navigator.pop(context);
+    await globalRadioAudioHandler.setSleepTimer(Duration(minutes: minutes));
+    _analyticsService.logActivity(
+      deviceId!,
+      'Set Local Player Sleep Timer',
+      details: {'minutes': minutes},
+    );
+    _showSnackBar('Sleep timer set for $minutes minutes.');
   }
 
   Widget _ctxTile(
@@ -830,6 +969,15 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
       ).rename('$dir/${newName}_${DateTime.now().millisecondsSinceEpoch}.$ext');
       HapticFeedback.lightImpact();
       _showSnackBar('Renamed to "$newName".');
+      _analyticsService.logActivity(
+        deviceId!,
+        'Rename Local File',
+        details: {
+          'oldTitle': file.title,
+          'newTitle': newName,
+          'path': file.path,
+        },
+      );
       _loadLocalRecordings();
     } catch (e) {
       _showSnackBar('Could not rename: $e');
@@ -843,6 +991,16 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
       final title = _titleOf(file);
       if (await File(path).exists()) {
         await Share.shareXFiles([XFile(path)], subject: 'Check out: $title');
+        _analyticsService.logActivity(
+          deviceId!,
+          'Share Local File',
+          details: {
+            'title': title,
+            'path': path,
+            'category':
+                ['Music', 'Downloads', 'Recordings'][_tabController.index],
+          },
+        );
       } else {
         _showSnackBar('Error: File not found.');
       }
@@ -885,11 +1043,21 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
 
   Future<void> _doDeleteFile(dynamic file, bool isRec) async {
     try {
+      final title = _titleOf(file);
       final f = File(_idOf(file));
       if (await f.exists()) {
         await f.delete();
+        _analyticsService.logActivity(
+          deviceId!,
+          'Delete Local File',
+          details: {
+            'title': title,
+            'path': _idOf(file),
+            'category': isRec ? 'Recordings' : 'Downloads',
+          },
+        );
         HapticFeedback.lightImpact();
-        _showSnackBar('"${_titleOf(file)}" deleted.');
+        _showSnackBar('"$title" deleted.');
         if (isRec)
           _loadLocalRecordings();
         else
@@ -964,6 +1132,14 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                     if (val == null) return;
                     set(() {});
                     setState(() => _sortOptions[tab] = val);
+                    _analyticsService.logActivity(
+                      deviceId!,
+                      'Change Local Sort',
+                      details: {
+                        'tab': ['Music', 'Downloads', 'Recordings'][tab],
+                        'sort': val.label,
+                      },
+                    );
                     _saveSortPref(tab);
                     Navigator.pop(ctx);
                   },
@@ -1302,13 +1478,18 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                         : Icons.search_rounded,
                   ),
                   tooltip: 'Search',
-                  onPressed: () => setState(() {
-                    _searchVisible = !_searchVisible;
-                    if (!_searchVisible) {
-                      for (final tc in _searchControllers) tc.clear();
-                      for (int i = 0; i < 3; i++) _searchQueries[i] = '';
-                    }
-                  }),
+                    onPressed: () => setState(() {
+                      _searchVisible = !_searchVisible;
+                      _analyticsService.logActivity(
+                        deviceId!,
+                        _searchVisible ? 'MP3 Player Show Search' : 'MP3 Player Hide Search',
+                        details: {'source': 'Main Navigator', 'tab': _tabController.index},
+                      );
+                      if (!_searchVisible) {
+                        for (final tc in _searchControllers) tc.clear();
+                        for (int i = 0; i < 3; i++) _searchQueries[i] = '';
+                      }
+                    }),
                 ),
                 IconButton(
                   visualDensity: wideLandscape
@@ -1317,6 +1498,50 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                   icon: const Icon(Icons.sort_rounded),
                   tooltip: 'Sort',
                   onPressed: _showSortSheet,
+                ),
+                IconButton(
+                  visualDensity: wideLandscape
+                      ? VisualDensity.compact
+                      : VisualDensity.standard,
+                  icon: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      const Icon(Icons.queue_music_rounded),
+                      if (_manualQueue.isNotEmpty)
+                        Positioned(
+                          right: -6,
+                          top: -6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 1,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF7C4DFF),
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                            child: Text(
+                              '${_manualQueue.length}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  tooltip: 'Play queued tracks',
+                  onPressed: _playManualQueue,
+                ),
+                IconButton(
+                  visualDensity: wideLandscape
+                      ? VisualDensity.compact
+                      : VisualDensity.standard,
+                  icon: const Icon(Icons.bedtime_rounded),
+                  tooltip: 'Sleep timer presets',
+                  onPressed: _showSleepPresets,
                 ),
               ],
             ),

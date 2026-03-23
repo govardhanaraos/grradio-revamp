@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:grradio/api/analytics_service_api.dart';
+import 'package:grradio/main.dart';
 
 class ModernMiniPlayer extends StatelessWidget {
   final String title;
@@ -131,13 +133,29 @@ class ModernMiniPlayer extends StatelessWidget {
               color: Colors.white,
               size: 34,
             ),
-            onPressed: isPlaying ? onPause : onPlay,
+            onPressed: () {
+              AnalyticsServiceAPI().logActivity(
+                deviceId!,
+                isPlaying
+                    ? "Pause Masstamilan Mini Player"
+                    : "Resume Masstamilan Mini Player",
+                details: {"title": title},
+              );
+              isPlaying ? onPause() : onPlay();
+            },
           ),
 
           // Close
           IconButton(
             icon: const Icon(Icons.close, color: Colors.white),
-            onPressed: onClose,
+            onPressed: () {
+              AnalyticsServiceAPI().logActivity(
+                deviceId!,
+                "Close Masstamilan Mini Player",
+                details: {"title": title},
+              );
+              onClose();
+            },
           ),
         ],
       ),

@@ -14,6 +14,8 @@ import 'package:grradio/mp3download/oldmp3browserscreen.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:grradio/api/analytics_service_api.dart';
+import 'package:grradio/main.dart';
 
 import '../main.dart';
 import '../more/theme_provider.dart';
@@ -297,6 +299,7 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
   bool _isLoading = false;
 
   // ── Remote screen config ───────────────────────────────────────────────────
+  final AnalyticsServiceAPI _analyticsService = AnalyticsServiceAPI();
   _DownloadScreenConfig _config = _DownloadScreenConfig.fallback;
   bool _configLoaded =
       false; // flips true once fetch completes (success or fail)
@@ -426,15 +429,19 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
             _config = parsed;
             _configLoaded = true;
             _configError = null;
-            if (_selectedLanguage != null &&
-                !_config.languages.any((l) => l.label == _selectedLanguage)) {
-              _selectedLanguage = null;
-            }
             if (_selectedFileType != null &&
                 !_config.contentTypes.any((t) => t.label == _selectedFileType)) {
               _selectedFileType = null;
             }
           });
+          _analyticsService.logActivity(
+            deviceId!,
+            "MP3 Download Config Fetch Success",
+            details: {
+              "languages": parsed.languages.length,
+              "albumEntries": parsed.albumEntries.length,
+            },
+          );
           return;
         }
 
@@ -445,6 +452,11 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
             _configLoaded = true;
             _configError = msg;
           });
+          _analyticsService.logActivity(
+            deviceId!,
+            "MP3 Download Config Fetch Error",
+            details: {"error": msg},
+          );
         }
         return;
       } on TimeoutException catch (e, st) {
@@ -515,6 +527,15 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
     }
     HapticFeedback.lightImpact();
     setState(() => _isLoading = true);
+    _analyticsService.logActivity(
+      deviceId!,
+      'Search MP3',
+      details: {
+        'query': _searchController.text.trim(),
+        'language': _selectedLanguage,
+        'fileType': _selectedFileType,
+      },
+    );
     if (_showInterstitial) {
       _tapCount++;
       if (_tapCount % _interstitialEvery == 0) InterstitialAdManager.show();
@@ -540,6 +561,14 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
   void _navigateToOldMp3() async {
     HapticFeedback.lightImpact();
     setState(() => _isLoading = true);
+    _analyticsService.logActivity(
+      deviceId!,
+      'Navigate to Old Archive',
+      details: {
+        'url': _oldArchiveUrl,
+        'language': _selectedLanguage ?? 'All',
+      },
+    );
     if (_showInterstitial) {
       _tapCount++;
       if (_tapCount % _interstitialEvery == 0) InterstitialAdManager.show();
@@ -844,6 +873,11 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
   Widget _buildAlbumCard(_AlbumBrowseEntry entry) => GestureDetector(
     onTap: () {
       HapticFeedback.lightImpact();
+      _analyticsService.logActivity(
+        deviceId!,
+        "Select Featured Album",
+        details: {"label": entry.label, "lang": entry.lang},
+      );
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -1003,6 +1037,7 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
             _configError = null;
             _configLoaded = false;
           });
+          _analyticsService.logActivity(deviceId!, "Refresh MP3 Download Config");
           await adConfigProvider.refresh(isPremiumUser: isPremiumUser.value);
           await _fetchConfig();
         },

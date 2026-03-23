@@ -1,0 +1,198 @@
+{
+  "@@locale": "en",
+
+  "appName": "GR Radio",
+  "@appName": { "description": "Application name" },
+
+  "tabRadio": "Radio",
+  "@tabRadio": { "description": "Bottom nav tab label" },
+
+  "tabPlayer": "Player",
+  "@tabPlayer": { "description": "Bottom nav tab label" },
+
+  "tabDownloads": "Downloads",
+  "@tabDownloads": { "description": "Bottom nav tab label" },
+
+  "tabMore": "More",
+  "@tabMore": { "description": "Bottom nav tab label" },
+
+  "sectionSettings": "Settings",
+  "@sectionSettings": { "description": "More screen section header" },
+
+  "sectionSupport": "Support",
+  "@sectionSupport": { "description": "More screen section header" },
+
+  "settingDarkMode": "Dark Mode",
+  "@settingDarkMode": {},
+
+  "settingDarkModeOnSubtitle": "Dark theme is on",
+  "@settingDarkModeOnSubtitle": {},
+
+  "settingDarkModeOffSubtitle": "Light theme is on",
+  "@settingDarkModeOffSubtitle": {},
+
+  "settingLanguage": "Language",
+  "@settingLanguage": {},
+
+  "settingLanguageSubtitle": "Choose your preferred language",
+  "@settingLanguageSubtitle": {},
+
+  "settingGoPremium": "Go Premium (Ad-Free)",
+  "@settingGoPremium": {},
+
+  "settingGoPremiumSubtitle": "Unlock all features with a subscription",
+  "@settingGoPremiumSubtitle": {},
+
+  "settingNotifications": "Notifications",
+  "@settingNotifications": {},
+
+  "settingNotificationsSubtitle": "Manage your notification preferences",
+  "@settingNotificationsSubtitle": {},
+
+  "settingHelpSupport": "Help & Support",
+  "@settingHelpSupport": {},
+
+  "settingHelpSupportSubtitle": "Get help and contact support",
+  "@settingHelpSupportSubtitle": {},
+
+  "settingRateApp": "Rate App",
+  "@settingRateApp": {},
+
+  "settingRateAppSubtitle": "Share your feedback with us",
+  "@settingRateAppSubtitle": {},
+
+  "settingShareApp": "Share App",
+  "@settingShareApp": {},
+
+  "settingShareAppSubtitle": "Share with your friends",
+  "@settingShareAppSubtitle": {},
+
+  "settingAbout": "About",
+  "@settingAbout": {},
+
+  "settingAboutSubtitle": "App version and information",
+  "@settingAboutSubtitle": {},
+
+  "appTagline": "Your Ultimate Music Companion",
+  "@appTagline": {},
+
+  "discoverHeader": "Discover",
+  "@discoverHeader": { "description": "Radio screen header" },
+
+  "nowPlaying": "NOW PLAYING",
+  "@nowPlaying": {},
+
+  "searchStations": "Search stations...",
+  "@searchStations": {},
+
+  "noStationsMatch": "No stations match \"{query}\"",
+  "@noStationsMatch": {
+    "placeholders": {
+      "query": { "type": "String" }
+    }
+  },
+
+  "noLanguageStations": "No {language} stations found",
+  "@noLanguageStations": {
+    "placeholders": {
+      "language": { "type": "String" }
+    }
+  },
+
+  "clearFilters": "Clear filters",
+  "@clearFilters": {},
+
+  "tryDifferentFilter": "Try a different search or language filter",
+  "@tryDifferentFilter": {},
+
+  "sectionFavourites": "Favourites",
+  "@sectionFavourites": {},
+
+  "sectionRecentlyPlayed": "Recently Played",
+  "@sectionRecentlyPlayed": {},
+
+  "sectionForYou": "For You",
+  "@sectionForYou": {},
+
+  "sectionTrending": "Trending",
+  "@sectionTrending": {},
+
+  "sectionAllStations": "All Stations",
+  "@sectionAllStations": {},
+
+  "seeAll": "See all",
+  "@seeAll": {},
+
+  "mp3PlayerTitle": "My Music",
+  "@mp3PlayerTitle": {},
+
+  "mp3TabMusic": "Music",
+  "@mp3TabMusic": {},
+
+  "mp3TabDownloads": "Downloads",
+  "@mp3TabDownloads": {},
+
+  "mp3TabRecordings": "Recordings",
+  "@mp3TabRecordings": {},
+
+  "mp3NoFiles": "No files found",
+  "@mp3NoFiles": {},
+
+  "mp3SearchHint": "Search songs...",
+  "@mp3SearchHint": {},
+
+  "downloadTitle": "MP3 Download",
+  "@downloadTitle": {},
+
+  "downloadSearchHint": "Search for MP3s...",
+  "@downloadSearchHint": {},
+
+  "downloadSearchAction": "Search",
+  "@downloadSearchAction": {},
+
+  "dialogUpdateTitle": "Update Available",
+  "@dialogUpdateTitle": {},
+
+  "dialogUpdateContent": "A new version ({version}) of GR Radio is available. Please update to continue enjoying the best experience.",
+  "@dialogUpdateContent": {
+    "placeholders": {
+      "version": { "type": "String" }
+    }
+  },
+
+  "dialogUpdateLater": "Later",
+  "@dialogUpdateLater": {},
+
+  "dialogUpdateNow": "Update",
+  "@dialogUpdateNow": {},
+
+  "dialogNoInternet": "No Internet Connection",
+  "@dialogNoInternet": {},
+
+  "dialogNoInternetContent": "Please check your internet connection and try again.",
+  "@dialogNoInternetContent": {},
+
+  "dialogRetry": "RETRY",
+  "@dialogRetry": {},
+
+  "languageSelectionTitle": "Select Language",
+  "@languageSelectionTitle": {},
+
+  "languageEnglish": "English",
+  "@languageEnglish": {},
+
+  "languageArabic": "عربي (Arabic)",
+  "@languageArabic": {},
+
+  "languageTelugu": "తెలుగు (Telugu)",
+  "@languageTelugu": {},
+
+  "languageTamil": "தமிழ் (Tamil)",
+  "@languageTamil": {},
+
+  "languageKannada": "ಕನ್ನಡ (Kannada)",
+  "@languageKannada": {},
+
+  "languageHindi": "हिन्दी (Hindi)",
+  "@languageHindi": {}
+}

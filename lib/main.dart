@@ -22,6 +22,8 @@ import 'package:grradio/data/track_metadata.dart';
 import 'package:grradio/more/more.dart';
 import 'package:grradio/more/notificationservice.dart';
 import 'package:grradio/more/theme_provider.dart';
+import 'package:grradio/more/locale_provider.dart';
+import 'package:grradio/l10n/app_localizations.dart';
 import 'package:grradio/mp3download/mp3downloadscreen.dart';
 import 'package:grradio/player/mp3playerhandler.dart';
 import 'package:grradio/player/mp3playerscreen.dart';
@@ -230,6 +232,11 @@ void checkForUpdate(BuildContext context) async {
             ),
             ElevatedButton(
               onPressed: () async {
+                _analyticsService.logActivity(
+                  deviceId ?? 'unknown',
+                  'Update App Clicked',
+                  details: {'version': latestVersion},
+                );
                 final uri = Uri.parse(updateUrl);
                 if (await canLaunchUrl(uri)) {
                   await launchUrl(uri, mode: LaunchMode.externalApplication);
@@ -239,6 +246,11 @@ void checkForUpdate(BuildContext context) async {
             ),
           ],
         ),
+      );
+      _analyticsService.logActivity(
+        deviceId ?? 'unknown',
+        'Update Dialog Shown',
+        details: {'version': latestVersion},
       );
     }
   } catch (e) {
@@ -465,6 +477,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         // Provide the already-initialised instance — no create needed.
         ChangeNotifierProvider<AdConfigProvider>.value(value: adConfigProvider),
+        ChangeNotifierProvider(create: (_) => LocaleProvider()..loadSavedLocale()),
       ],
       child: RadioApp(),
     ),
@@ -518,9 +531,13 @@ class RadioApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
+    final localeProvider = Provider.of<LocaleProvider>(context);
 
     return MaterialApp(
       title: 'GR Radio',
+      locale: localeProvider.currentLocale,
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
@@ -553,6 +570,14 @@ class _MainNavigatorState extends State<MainNavigator> {
   void _dismissMiniPlayerForCurrentTrack(MediaItem? mediaItem) {
     if (mediaItem == null) return;
     setState(() => _miniPlayerDismissedForMediaId = mediaItem.id);
+    _analyticsService.logActivity(
+      deviceId ?? 'unknown',
+      'Dismiss Mini Player',
+      details: {
+        'trackTitle': mediaItem.title,
+        'trackId': mediaItem.id,
+      },
+    );
     if (_isPanelOpen) _panelController.close();
   }
 
@@ -574,6 +599,10 @@ class _MainNavigatorState extends State<MainNavigator> {
       _mp3SubTabIndex = 2;
       _selectedIndex = 1;
     });
+    _analyticsService.logActivity(
+      deviceId ?? 'unknown',
+      'Navigate to Recordings Shortcut',
+    );
   }
 
   /// Radio screen "Player" shortcut — resets MP3 sub-tab to Music (0).
@@ -584,6 +613,10 @@ class _MainNavigatorState extends State<MainNavigator> {
       _selectedIndex = 1;
       _mp3SubTabIndex = 0;
     });
+    _analyticsService.logActivity(
+      deviceId ?? 'unknown',
+      'Open Player from Radio Shortcut',
+    );
   }
 
   @override
@@ -692,6 +725,10 @@ class _MainNavigatorState extends State<MainNavigator> {
         ],
       ),
     );
+    _analyticsService.logActivity(
+      deviceId ?? 'unknown',
+      'No Internet Dialog Shown',
+    );
   }
 
   void _dismissDialog() {
@@ -753,6 +790,10 @@ class _MainNavigatorState extends State<MainNavigator> {
           ],
         ),
       );
+      _analyticsService.logActivity(
+        deviceId ?? 'unknown',
+        'Battery Optimization Dialog Shown',
+      );
     }
   }
 
@@ -781,6 +822,16 @@ class _MainNavigatorState extends State<MainNavigator> {
     if (index == _selectedIndex) return;
 
     if (_isPanelOpen) _panelController.close();
+
+    final labels = ['Radio', 'Player', 'Download', 'More'];
+    _analyticsService.logActivity(
+      deviceId ?? 'unknown',
+      'Switch Tab',
+      details: {
+        'from': labels[_selectedIndex],
+        'to': labels[index],
+      },
+    );
 
     setState(() {
       _selectedIndex = index;
