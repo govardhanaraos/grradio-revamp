@@ -11,23 +11,25 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:grradio/Env.dart';
 import 'package:grradio/ads/ad_config_provider.dart';
 import 'package:grradio/api/analytics_service_api.dart';
+import 'package:grradio/app/splash_animation_screen.dart';
 import 'package:grradio/data/track_metadata.dart';
-import 'package:grradio/player/mp3playerhandler.dart';
 import 'package:grradio/more/more.dart';
 import 'package:grradio/more/notificationservice.dart';
 import 'package:grradio/more/theme_provider.dart';
 import 'package:grradio/mp3download/mp3downloadscreen.dart';
-import 'package:grradio/app/splash_animation_screen.dart';
+import 'package:grradio/player/mp3playerhandler.dart';
 import 'package:grradio/player/mp3playerscreen.dart';
-import 'package:grradio/radio/radiostation.dart';
-import 'package:grradio/radio/radiostationserviceapi.dart';
 import 'package:grradio/radio/radio_handler_mobile.dart';
 import 'package:grradio/radio/radioplayerscreen_mobile.dart';
+import 'package:grradio/radio/radiostation.dart';
+import 'package:grradio/radio/radiostationserviceapi.dart';
+import 'package:grradio/theme/app_theme.dart';
 import 'package:grradio/widgets/expanded_player_content.dart';
 import 'package:grradio/widgets/mini_player_tile.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -70,6 +72,23 @@ bool _isInitializing = false;
 final _storage = const FlutterSecureStorage();
 final ValueNotifier<bool> isPremiumUser = ValueNotifier(false);
 
+Future<void> setPremiumUserState(
+  bool isPremium, {
+  bool refreshAdsConfig = false,
+}) async {
+  isPremiumUser.value = isPremium;
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setBool('is_premium', isPremium);
+  try {
+    await adConfigProvider.updatePremiumStatus(isPremium);
+    if (refreshAdsConfig) {
+      await adConfigProvider.refresh(isPremiumUser: isPremium);
+    }
+  } catch (_) {
+    // Provider may not be initialized during very early startup.
+  }
+}
+
 Future<void> initializeApp() async {
   if (_isInitializing) {
     await _analyticsService.logActivity(
@@ -110,34 +129,18 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<void> initializeRevenueCat() async {
   String apiKey;
-  if (Env.environment == 'production') {
-    if (Platform.isIOS) {
-      apiKey = 'sk_CPpSAxwIVwwXPBizbMGkpdAMBJaan';
-    } else if (Platform.isAndroid) {
-      apiKey = 'sk_CPpSAxwIVwwXPBizbMGkpdAMBJaan';
-    } else {
-      throw UnsupportedError('Platform not supported');
-    }
+  if (Platform.isIOS) {
+    apiKey = Env.revenueCatIosPublicSdkKey;
+  } else if (Platform.isAndroid) {
+    apiKey = Env.revenueCatAndroidPublicSdkKey;
   } else {
-    if (Platform.isIOS) {
-      apiKey = 'test_EWJndZnjbUWEyVNJYEKSuRLKyBS';
-    } else if (Platform.isAndroid) {
-      apiKey = 'test_EWJndZnjbUWEyVNJYEKSuRLKyBS';
-    } else {
-      throw UnsupportedError('Platform not supported');
-    }
+    throw UnsupportedError('Platform not supported');
   }
 
   await Purchases.configure(PurchasesConfiguration(apiKey));
 
   Purchases.addCustomerInfoUpdateListener((customerInfo) async {
     await _updateStatusFromCustomerInfo(customerInfo);
-    // Propagate premium status change into the ad config provider.
-    try {
-      await adConfigProvider.updatePremiumStatus(isPremiumUser.value);
-    } catch (e) {
-      print('adConfigProvider not yet initialized: $e');
-    }
   });
 }
 
@@ -151,13 +154,11 @@ Future<void> updatePremiumStatus() async {
 }
 
 Future<void> _updateStatusFromCustomerInfo(CustomerInfo customerInfo) async {
+  final entitlement =
+      customerInfo.entitlements.all[Env.revenueCatEntitlementId];
   final bool isEntitled =
-      customerInfo.entitlements.all['premium']?.isActive ?? false;
-
-  isPremiumUser.value = isEntitled;
-
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setBool('is_premium', isEntitled);
+      entitlement?.isActive ?? customerInfo.entitlements.active.isNotEmpty;
+  await setPremiumUserState(isEntitled, refreshAdsConfig: !isEntitled);
 }
 
 Future<String> _getDeviceId() async {
@@ -205,39 +206,66 @@ Future<void> setupNotificationSubscription() async {
 }
 
 void checkForUpdate(BuildContext context) async {
-  final config = await fetchAppConfig();
-  bool updateEnabled = config["app_update_enabled"] == "true";
-  String latestVersion = config["app_update_version"] ?? "0.0.0";
-  String updateUrl = config["app_update_url"] ?? "";
-  String currentVersion = "1.0.0";
+  try {
+    final config = await fetchAppConfig();
+    bool updateEnabled = config["app_update_enabled"] == "true";
+    String latestVersion = config["app_update_version"] ?? "0.0.0";
+    String updateUrl = config["app_update_url"] ?? "";
+    String currentVersion = "1.0.0";
 
-  if (updateEnabled && isNewerVersion(currentVersion, latestVersion)) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: Text("Update Available"),
-        content: Text(
-          "A new version ($latestVersion) of GR Radio is available. "
-          "Please update to continue enjoying the best experience.",
+    if (updateEnabled && isNewerVersion(currentVersion, latestVersion)) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          title: Text("Update Available"),
+          content: Text(
+            "A new version ($latestVersion) of GR Radio is available. "
+            "Please update to continue enjoying the best experience.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text("Later"),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final uri = Uri.parse(updateUrl);
+                if (await canLaunchUrl(uri)) {
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                }
+              },
+              child: Text("Update"),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text("Later"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              final uri = Uri.parse(updateUrl);
-              if (await canLaunchUrl(uri)) {
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
-              }
-            },
-            child: Text("Update"),
-          ),
-        ],
-      ),
-    );
+      );
+    }
+  } catch (e) {
+    debugPrint('checkForUpdate failed: $e');
+  }
+}
+
+/// Persists station list to Hive (`cachedStations`). [markSyncComplete] should be
+/// true only after all pages are merged so the 12h refresh rule matches a full sync.
+Future<void> _persistStationsToHive(
+  List<RadioStation> stations, {
+  bool markSyncComplete = true,
+}) async {
+  if (stations.isEmpty) return;
+  try {
+    final box = await Hive.openBox<RadioStation>('cachedStations');
+    await box.clear();
+    await box.addAll(stations);
+    if (markSyncComplete) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'last_station_sync',
+        DateTime.now().toIso8601String(),
+      );
+    }
+  } catch (e) {
+    debugPrint('Persist stations to Hive failed: $e');
   }
 }
 
@@ -249,7 +277,8 @@ Future<void> syncRemoteStations({bool forceRefresh = false}) async {
   if (stationsNotifier.value.isNotEmpty && !forceRefresh) {
     if (lastSyncStr != null) {
       final lastSync = DateTime.tryParse(lastSyncStr);
-      if (lastSync != null && DateTime.now().difference(lastSync).inHours < 12) {
+      if (lastSync != null &&
+          DateTime.now().difference(lastSync).inHours < 12) {
         // Cache is fresh (under 12 hours). Mark loading as complete immediately so UI shows carousels.
         stationsLoadingComplete.value = true;
         return;
@@ -268,6 +297,8 @@ Future<void> syncRemoteStations({bool forceRefresh = false}) async {
       if (firstPage.isNotEmpty) {
         stationsLoadingComplete.value = false;
         stationsNotifier.value = firstPage;
+        // Save logos + metadata from page 1 immediately (full list overwrites later).
+        await _persistStationsToHive(firstPage, markSyncComplete: false);
         _loadRemainingStationsInBackground(updateUIProgressively: true);
       }
     } else {
@@ -285,10 +316,10 @@ void _loadRemainingStationsInBackground({required bool updateUIProgressively}) {
   Future.microtask(() async {
     int currentPage = updateUIProgressively ? 2 : 1;
     bool hasMore = true;
-    
+
     // If not updating progressively, we just accumulate locally to avoid UI jank
-    List<RadioStation> backgroundAccumulator = updateUIProgressively 
-        ? List.from(stationsNotifier.value) 
+    List<RadioStation> backgroundAccumulator = updateUIProgressively
+        ? List.from(stationsNotifier.value)
         : [];
 
     while (hasMore) {
@@ -300,7 +331,9 @@ void _loadRemainingStationsInBackground({required bool updateUIProgressively}) {
         backgroundAccumulator.addAll(stations);
 
         if (updateUIProgressively) {
-          final unique = {for (var s in backgroundAccumulator) s.id: s}.values.toList();
+          final unique = {
+            for (var s in backgroundAccumulator) s.id: s,
+          }.values.toList();
           stationsNotifier.value = List.unmodifiable(unique);
         }
 
@@ -312,7 +345,9 @@ void _loadRemainingStationsInBackground({required bool updateUIProgressively}) {
     }
 
     // All pages done
-    final unique = {for (var s in backgroundAccumulator) s.id: s}.values.toList();
+    final unique = {
+      for (var s in backgroundAccumulator) s.id: s,
+    }.values.toList();
     if (!updateUIProgressively) {
       // Atomic update for background refresh
       stationsNotifier.value = List.unmodifiable(unique);
@@ -320,18 +355,25 @@ void _loadRemainingStationsInBackground({required bool updateUIProgressively}) {
 
     stationsLoadingComplete.value = true;
 
-    final box = await Hive.openBox<RadioStation>('cachedStations');
-    await box.clear();
-    await box.addAll(unique);
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('last_station_sync', DateTime.now().toIso8601String());
+    await _persistStationsToHive(unique, markSyncComplete: true);
   });
 }
 
 late dynamic globalRadioAudioHandler;
 late AudioPlayer globalMp3Player;
 late Mp3PlayerHandler globalMp3QueueService;
+Future<void>? _mobileAdsInitFuture;
+
+Future<void> _ensureMobileAdsInitialized() async {
+  _mobileAdsInitFuture ??= () async {
+    try {
+      await MobileAds.instance.initialize();
+    } catch (e) {
+      debugPrint('Google Mobile Ads init failed: $e');
+    }
+  }();
+  await _mobileAdsInitFuture;
+}
 
 void pauseRadioIfPlaying() {
   if (globalRadioAudioHandler.playbackState.value.playing) {
@@ -391,11 +433,7 @@ Future<void> _initAudioHandlers() async {
 
 void _initializeAdsDelayed() {
   Future.microtask(() async {
-    try {
-      await MobileAds.instance.initialize();
-    } catch (e) {
-      print('❌ Failed to initialize Google Mobile Ads (Delayed): $e');
-    }
+    await _ensureMobileAdsInitialized();
   });
 }
 
@@ -403,17 +441,21 @@ void main() async {
   HttpOverrides.global = MyHttpOverrides();
 
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations(const [
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
   final prefs = await SharedPreferences.getInstance();
   isPremiumUser.value = prefs.getBool('is_premium') ?? false;
   deviceId = await _getPersistentDeviceId();
   await initializeApp();
-  await Firebase.initializeApp();
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-  NotificationService notificationService = NotificationService();
-  await notificationService.initNotifications();
   await _initAudioHandlers();
 
   adConfigProvider = AdConfigProvider(_analyticsService);
+  await adConfigProvider.hydrateFromCache(isPremiumUser: isPremiumUser.value);
+  globalAdsEnabled = adConfigProvider.globalAdsEnabled;
   // [globalAdsEnabled] stays false until deferred init completes — UI guards on
   // [AdConfigProvider.initialized] where needed.
 
@@ -430,8 +472,17 @@ void main() async {
 
   // Network-heavy startup: must not block the first frame or native splash handoff.
   unawaited(_completeDeferredStartup());
+  // Initialize ads SDK early regardless of remote ad flags.
+  unawaited(_ensureMobileAdsInitialized());
 
-  setupNotificationSubscription();
+  // Firebase / notifications can take time; don't block app landing.
+  unawaited(() async {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    final notificationService = NotificationService();
+    await notificationService.initNotifications();
+    setupNotificationSubscription();
+  }());
   syncRemoteStations();
 }
 
@@ -439,12 +490,18 @@ void main() async {
 /// by HTTP (stations already load from Hive; [syncRemoteStations] refreshes in background).
 Future<void> _completeDeferredStartup() async {
   try {
+    // RevenueCat first so [isPremiumUser] matches entitlements before we load
+    // ad config (premium must hide ads even when /analytics/config/global is on).
+    try {
+      await Purchases.setLogLevel(LogLevel.debug);
+      await initializeRevenueCat();
+      await updatePremiumStatus();
+    } catch (e) {
+      debugPrint('RevenueCat deferred init: $e');
+    }
+
     await adConfigProvider.initialize(isPremiumUser: isPremiumUser.value);
     globalAdsEnabled = adConfigProvider.globalAdsEnabled;
-
-    await Purchases.setLogLevel(LogLevel.debug);
-    await initializeRevenueCat();
-    await updatePremiumStatus();
 
     await _analyticsService.registerDevice(
       deviceId ?? "unknown-device",
@@ -461,83 +518,11 @@ class RadioApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
-    const brandViolet = Color(0xFF7C4DFF);
-    const brandBlue = Color(0xFF448AFF);
-
-    final TextTheme baseTextTheme = const TextTheme(
-      displayLarge: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-      displayMedium: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-      displaySmall: TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
-      headlineMedium: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-      headlineSmall: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-      titleLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-      titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-      titleSmall: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-      bodyLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.normal),
-      bodyMedium: TextStyle(fontSize: 14, fontWeight: FontWeight.normal),
-      bodySmall: TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
-      labelLarge: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-      labelMedium: TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-      labelSmall: TextStyle(fontSize: 10, fontWeight: FontWeight.w400),
-    ).apply(fontFamily: 'Outfit');
 
     return MaterialApp(
       title: 'GR Radio',
-      theme: ThemeData(
-        fontFamily: 'Outfit',
-        brightness: Brightness.light,
-        useMaterial3: true,
-        primaryColor: brandViolet,
-        scaffoldBackgroundColor: Colors.grey.shade50,
-        colorScheme: const ColorScheme.light(
-          primary: brandViolet,
-          secondary: brandBlue,
-          surface: Colors.white,
-          error: Colors.redAccent,
-        ),
-        textTheme: baseTextTheme.apply(bodyColor: Colors.black87, displayColor: Colors.black),
-        appBarTheme: AppBarTheme(
-          backgroundColor: Colors.white.withOpacity(0.9),
-          elevation: 0,
-          scrolledUnderElevation: 1,
-          iconTheme: const IconThemeData(color: Colors.black87),
-          titleTextStyle: const TextStyle(
-            fontFamily: 'Outfit',
-            color: Colors.black,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-
-      ),
-      darkTheme: ThemeData(
-        fontFamily: 'Outfit',
-        brightness: Brightness.dark,
-        useMaterial3: true,
-        primaryColor: brandViolet,
-        scaffoldBackgroundColor: const Color(0xFF121212),
-        cardColor: const Color(0xFF1E1E1E),
-        colorScheme: const ColorScheme.dark(
-          primary: brandViolet,
-          secondary: brandBlue,
-          surface: Color(0xFF1E1E1E),
-          error: Colors.redAccent,
-        ),
-        textTheme: baseTextTheme.apply(bodyColor: Colors.white70, displayColor: Colors.white),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          iconTheme: IconThemeData(color: Colors.white),
-          titleTextStyle: TextStyle(
-            fontFamily: 'Outfit',
-            color: Colors.white,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-
-      ),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
       themeMode: themeProvider.isDarkMode ? ThemeMode.dark : ThemeMode.light,
       home: AnimatedSplashScreen(),
     );
@@ -557,8 +542,30 @@ class _MainNavigatorState extends State<MainNavigator> {
   final PanelController _panelController = PanelController();
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _isDialogShowing = false;
+  bool _sleepTimerActive = false;
+  int _sleepRemainingSeconds = 0;
+
+  /// When set to the current [MediaItem.id], the collapsed + tab mini players are hidden until the track changes or playback stops.
+  String? _miniPlayerDismissedForMediaId;
 
   StreamSubscription? _customEventSub;
+
+  void _dismissMiniPlayerForCurrentTrack(MediaItem? mediaItem) {
+    if (mediaItem == null) return;
+    setState(() => _miniPlayerDismissedForMediaId = mediaItem.id);
+    if (_isPanelOpen) _panelController.close();
+  }
+
+  void _stopAndDismissMiniPlayer(MediaItem? mediaItem) {
+    if (_isRecording) return;
+    try {
+      globalRadioAudioHandler.stop();
+    } catch (_) {}
+    try {
+      pauseMp3IfPlaying();
+    } catch (_) {}
+    _dismissMiniPlayerForCurrentTrack(mediaItem);
+  }
 
   void _navigateToMp3RecordingsTab() {
     if (_isRecording) return;
@@ -607,6 +614,15 @@ class _MainNavigatorState extends State<MainNavigator> {
         if (type == 'record_status') {
           final isRec = event['isRecording'] as bool? ?? false;
           if (mounted) setState(() => _isRecording = isRec);
+        } else if (type == 'sleep_timer_update') {
+          final active = event['active'] as bool? ?? false;
+          final remaining = event['remaining_seconds'] as int? ?? 0;
+          if (mounted) {
+            setState(() {
+              _sleepTimerActive = active;
+              _sleepRemainingSeconds = remaining;
+            });
+          }
         } else if (type == 'permission_denied') {
           final msg = event['message'] as String? ?? 'Permission denied';
           if (mounted) {
@@ -622,6 +638,18 @@ class _MainNavigatorState extends State<MainNavigator> {
         }
       }
     });
+  }
+
+  String _sleepMiniLabel() {
+    if (!_sleepTimerActive || _sleepRemainingSeconds <= 0) return '';
+    final minutes = (_sleepRemainingSeconds / 60).ceil();
+    if (minutes >= 60) {
+      final h = minutes ~/ 60;
+      final m = minutes % 60;
+      if (m == 0) return 'Sleep in ${h}h';
+      return 'Sleep in ${h}h ${m}m';
+    }
+    return 'Sleep in ${minutes}m';
   }
 
   Future<void> _checkInitialConnection() async {
@@ -730,7 +758,10 @@ class _MainNavigatorState extends State<MainNavigator> {
 
   void _syncStatus() async {
     final prefs = await SharedPreferences.getInstance();
-    isPremiumUser.value = prefs.getBool('is_premium') ?? false;
+    await setPremiumUserState(
+      prefs.getBool('is_premium') ?? false,
+      refreshAdsConfig: false,
+    );
   }
 
   void _onItemTapped(int index) {
@@ -759,10 +790,20 @@ class _MainNavigatorState extends State<MainNavigator> {
     });
   }
 
+  /// Wide landscape (typical car / tablet): side rail instead of bottom bar.
+  bool _useSideNavigation(MediaQueryData mq) {
+    return mq.orientation == Orientation.landscape && mq.size.width >= 600;
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final isDark = themeProvider.isDarkMode;
+    final mq = MediaQuery.of(context);
+    final useSideNav = _useSideNavigation(mq);
+    final bottomInset = mq.padding.bottom;
+    final keyboardOpen = mq.viewInsets.bottom > 0;
+    final navBarClearance = useSideNav ? 16.0 : 95.0;
 
     return Scaffold(
       body: StreamBuilder<MediaItem?>(
@@ -773,24 +814,187 @@ class _MainNavigatorState extends State<MainNavigator> {
             builder: (context, stateSnapshot) {
               final mediaItem = itemSnapshot.data;
               final isPlaying = stateSnapshot.data?.playing ?? false;
-              final bool hasMedia = mediaItem != null;
 
-              final double navBarClearance = 95.0;
-              final double screenHeight = MediaQuery.of(context).size.height;
+              if (mediaItem == null && _miniPlayerDismissedForMediaId != null) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    setState(() => _miniPlayerDismissedForMediaId = null);
+                  }
+                });
+              }
+
+              final bool showMiniPlayerChrome =
+                  mediaItem != null &&
+                  _miniPlayerDismissedForMediaId != mediaItem.id;
+
+              final double screenHeight = mq.size.height;
+
+              final stackBody = Stack(
+                children: [
+                  IndexedStack(
+                    index: _selectedIndex,
+                    children: [
+                      RadioPlayerScreen(
+                        onNavigateToMp3Tab: _openPlayerTabFromRadio,
+                        onRecordingStatusChanged: (v) =>
+                            setState(() => _isRecording = v),
+                        onNavigateToRecordings: _navigateToMp3RecordingsTab,
+                      ),
+                      Mp3PlayerScreen(
+                        key: ValueKey(_mp3SubTabIndex),
+                        initialTabIndex: _mp3SubTabIndex,
+                      ),
+                      Mp3DownloadScreen(),
+                      MoreScreen(),
+                    ],
+                  ),
+
+                  if (!useSideNav && _selectedIndex != 0 && !keyboardOpen)
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 105),
+                        child: _buildMiniPlayer(),
+                      ),
+                    ),
+
+                  if (!useSideNav)
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Padding(
+                        padding: EdgeInsets.only(bottom: bottomInset),
+                        child: _buildFloatingNavigationBar(isDark),
+                      ),
+                    ),
+
+                  if (_isRecording)
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.red.shade700,
+                              borderRadius: BorderRadius.circular(20),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.red.withOpacity(0.4),
+                                  blurRadius: 12,
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _PulsingDot(),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'RECORDING IN PROGRESS',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          AbsorbPointer(
+                            child: Opacity(
+                              opacity: 0.35,
+                              child: useSideNav
+                                  ? _buildNavigationRail(
+                                      isDark,
+                                      extended: false,
+                                    )
+                                  : _buildFloatingNavigationBar(isDark),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+
+              final panelBody = useSideNav
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildNavigationRail(
+                          isDark,
+                          extended: mq.size.width >= 900,
+                        ),
+                        VerticalDivider(
+                          width: 1,
+                          thickness: 1,
+                          color: Theme.of(context).dividerColor,
+                        ),
+                        Expanded(
+                          child: ClipRect(
+                            clipBehavior: Clip.hardEdge,
+                            child: Navigator(
+                              // Keep “see all / details” pages inside the left 70%.
+                              // This prevents them from covering the right-side
+                              // expanded player in landscape.
+                              key: ValueKey('leftNavigator_${_selectedIndex}'),
+                              onGenerateRoute: (settings) {
+                                return MaterialPageRoute(
+                                  builder: (_) => stackBody,
+                                  settings: settings,
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                  : stackBody;
+
+              if (useSideNav) {
+                final expandedPlayerWidth = mq.size.width * 0.30;
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: panelBody),
+                    SizedBox(
+                      width: expandedPlayerWidth,
+                      child: ExpandedPlayerContent(
+                        mediaItem: mediaItem,
+                        isPlaying: isPlaying,
+                        audioHandler: globalRadioAudioHandler,
+                        pc: null, // expanded player is always visible in landscape
+                        sidePanel: true,
+                        onNavigateToRecordings: _navigateToMp3RecordingsTab,
+                        onRecordingStatusChanged: (v) =>
+                            setState(() => _isRecording = v),
+                      ),
+                    ),
+                  ],
+                );
+              }
 
               return SlidingUpPanel(
                 controller: _panelController,
-                onPanelOpened: () =>
-                    setState(() => _isPanelOpen = true), // ✅ ADD
+                onPanelOpened: () => setState(() {
+                  _isPanelOpen = true;
+                  _miniPlayerDismissedForMediaId = null;
+                }),
                 onPanelClosed: () => setState(() => _isPanelOpen = false),
-                minHeight: hasMedia ? 80.0 : 0.0,
+                minHeight: (showMiniPlayerChrome && !keyboardOpen) ? 80.0 : 0.0,
                 maxHeight: screenHeight - navBarClearance,
-                margin: const EdgeInsets.only(bottom: 95),
+                margin: EdgeInsets.only(bottom: navBarClearance),
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(25),
                 ),
                 color: isDark ? const Color(0xFF121212) : Colors.white,
-                collapsed: hasMedia
+                collapsed: (showMiniPlayerChrome && !keyboardOpen)
                     ? MiniPlayerTile(
                         mediaItem: mediaItem,
                         isPlaying: isPlaying,
@@ -804,7 +1008,9 @@ class _MainNavigatorState extends State<MainNavigator> {
                             ? globalRadioAudioHandler.pause()
                             : globalRadioAudioHandler.play(),
                         onTap: () => _panelController.open(),
+                        onDismiss: () => _stopAndDismissMiniPlayer(mediaItem),
                         audioHandler: globalRadioAudioHandler,
+                        sleepLabel: _sleepMiniLabel(),
                       )
                     : const SizedBox.shrink(),
                 panel: ExpandedPlayerContent(
@@ -816,95 +1022,7 @@ class _MainNavigatorState extends State<MainNavigator> {
                   onRecordingStatusChanged: (v) =>
                       setState(() => _isRecording = v),
                 ),
-                body: Stack(
-                  children: [
-                    IndexedStack(
-                      index: _selectedIndex,
-                      children: [
-                        RadioPlayerScreen(
-                          onNavigateToMp3Tab: _openPlayerTabFromRadio,
-                          onRecordingStatusChanged: (v) =>
-                              setState(() => _isRecording = v),
-                          onNavigateToRecordings: _navigateToMp3RecordingsTab,
-                        ),
-                        Mp3PlayerScreen(
-                          key: ValueKey(_mp3SubTabIndex),
-                          initialTabIndex: _mp3SubTabIndex,
-                        ),
-                        Mp3DownloadScreen(),
-                        MoreScreen(),
-                      ],
-                    ),
-
-                    if (_selectedIndex != 0)
-                      Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 105),
-                          child: _buildMiniPlayer(),
-                        ),
-                      ),
-
-                    Align(
-                      alignment: Alignment.bottomCenter,
-                      child: Padding(
-                        padding: EdgeInsets.only(
-                          bottom: MediaQuery.of(context).padding.bottom,
-                        ),
-                        child: _buildFloatingNavigationBar(isDark),
-                      ),
-                    ),
-
-                    if (_isRecording)
-                      Align(
-                        alignment: Alignment.bottomCenter,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.red.shade700,
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.red.withOpacity(0.4),
-                                    blurRadius: 12,
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  _PulsingDot(),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'RECORDING IN PROGRESS',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      letterSpacing: 0.8,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            AbsorbPointer(
-                              child: Opacity(
-                                opacity: 0.35,
-                                child: _buildFloatingNavigationBar(isDark),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
+                body: panelBody,
               );
             },
           );
@@ -914,11 +1032,17 @@ class _MainNavigatorState extends State<MainNavigator> {
   }
 
   Widget _buildMiniPlayer() {
+    if (MediaQuery.of(context).viewInsets.bottom > 0) {
+      return const SizedBox.shrink();
+    }
     return StreamBuilder<MediaItem?>(
       stream: globalRadioAudioHandler.mediaItem,
       builder: (context, snapshot) {
         final mediaItem = snapshot.data;
         if (mediaItem == null) return const SizedBox.shrink();
+        if (mediaItem.id == _miniPlayerDismissedForMediaId) {
+          return const SizedBox.shrink();
+        }
         return StreamBuilder<PlaybackState>(
           stream: globalRadioAudioHandler.playbackState,
           builder: (context, stateSnapshot) {
@@ -963,12 +1087,19 @@ class _MainNavigatorState extends State<MainNavigator> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         Text(
-                          mediaItem.artist ?? "Radio Stream",
+                          _sleepMiniLabel().isNotEmpty
+                              ? _sleepMiniLabel()
+                              : (mediaItem.artist ?? "Radio Stream"),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.grey[600],
+                            color: _sleepMiniLabel().isNotEmpty
+                                ? const Color(0xFF7C4DFF)
+                                : Colors.grey[600],
+                            fontWeight: _sleepMiniLabel().isNotEmpty
+                                ? FontWeight.w700
+                                : FontWeight.w500,
                           ),
                         ),
                       ],
@@ -994,10 +1125,11 @@ class _MainNavigatorState extends State<MainNavigator> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 20),
+                    tooltip: 'Hide mini player',
+                    icon: const Icon(Icons.close_rounded, size: 22),
                     onPressed: _isRecording
                         ? null
-                        : () => globalRadioAudioHandler.stop(),
+                        : () => _stopAndDismissMiniPlayer(mediaItem),
                     color: _isRecording ? Colors.grey : null,
                   ),
                 ],
@@ -1006,6 +1138,58 @@ class _MainNavigatorState extends State<MainNavigator> {
           },
         );
       },
+    );
+  }
+
+  /// Left rail for landscape / wide displays (car-friendly).
+  Widget _buildNavigationRail(bool isDark, {required bool extended}) {
+    const icons = <IconData>[
+      Icons.radio,
+      Icons.music_note,
+      CupertinoIcons.arrow_down_circle_fill,
+      Icons.more_horiz,
+    ];
+    const labels = ['Radio', 'Player', 'Download', 'More'];
+
+    const brandPurple = Color(0xFF7C4DFF);
+    final unselectedGrey = Colors.grey.shade500;
+    return Material(
+      elevation: 8,
+      color: isDark
+          ? Colors.black.withOpacity(0.85)
+          : Colors.white.withOpacity(0.95),
+      child: NavigationRail(
+        extended: extended,
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: _onItemTapped,
+        labelType: extended
+            ? NavigationRailLabelType.all
+            : NavigationRailLabelType.all,
+        minWidth: extended ? 88 : 72,
+        groupAlignment: 0,
+        useIndicator: true,
+        indicatorColor: brandPurple.withOpacity(0.14),
+        selectedIconTheme: const IconThemeData(color: brandPurple, size: 26),
+        unselectedIconTheme: IconThemeData(color: unselectedGrey, size: 24),
+        selectedLabelTextStyle: const TextStyle(
+          color: brandPurple,
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+        ),
+        unselectedLabelTextStyle: TextStyle(
+          color: unselectedGrey,
+          fontWeight: FontWeight.w600,
+          fontSize: 11,
+        ),
+        destinations: [
+          for (var i = 0; i < 4; i++)
+            NavigationRailDestination(
+              icon: Icon(icons[i]),
+              selectedIcon: Icon(icons[i]),
+              label: Text(labels[i]),
+            ),
+        ],
+      ),
     );
   }
 

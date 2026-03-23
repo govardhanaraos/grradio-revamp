@@ -73,6 +73,11 @@ flutter:
     - assets/images/
     - assets/icons/
 
+  fonts:
+    - family: Outfit
+      fonts:
+        - asset: assets/fonts/Outfit-VariableFont_wght.ttf
+
 flutter_native_splash:
   # Color of the background
   color: "#FFFFFF" # Use a color that matches your app's theme (e.g., white)

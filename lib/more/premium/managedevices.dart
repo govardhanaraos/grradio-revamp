@@ -40,11 +40,10 @@ class _ManageDevicesScreenState extends State<ManageDevicesScreen> {
       // Check if the current device was the one removed
       if (dId == deviceId) {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('is_premium', false);
         await prefs.remove('saved_license_key');
 
         // This triggers the UI to switch to Activation Form immediately
-        isPremiumUser.value = false;
+        await setPremiumUserState(false, refreshAdsConfig: true);
 
         Navigator.pop(context); // Go back to activation screen
         ScaffoldMessenger.of(context).showSnackBar(

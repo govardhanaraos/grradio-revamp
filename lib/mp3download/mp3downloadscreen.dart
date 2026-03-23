@@ -13,8 +13,11 @@ import 'package:grradio/mp3download/mp3downloadresults.dart';
 import 'package:grradio/mp3download/oldmp3browserscreen.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:audio_service/audio_service.dart';
 
+import '../main.dart';
 import '../more/theme_provider.dart';
+import '../theme/app_theme_context.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Remote config models
@@ -280,6 +283,11 @@ class Mp3DownloadScreen extends StatefulWidget {
 
 class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
     with SingleTickerProviderStateMixin {
+  bool _wideLandscape(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    return mq.orientation == Orientation.landscape && mq.size.width >= 600;
+  }
+
   // ── Selection state ────────────────────────────────────────────────────────
   String? _selectedLanguage;
   String? _selectedFileType;
@@ -302,6 +310,7 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
   int _interstitialEvery = 5;
   int _tapCount = 0;
   bool _adConfigLoaded = false;
+  VoidCallback? _adConfigListener;
 
   // ── Old-archive URL ────────────────────────────────────────────────────────
   // base_url in the MongoDB document is a route PREFIX (e.g. "masstelugu"),
@@ -347,15 +356,12 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
       final adConfig = context.read<AdConfigProvider>();
       if (adConfig.initialized) {
         _snapshotAdConfig(adConfig);
-      } else {
-        late void Function() _listener;
-        _listener = () {
-          if (!mounted) return;
-          _snapshotAdConfig(adConfig);
-          adConfig.removeListener(_listener);
-        };
-        adConfig.addListener(_listener);
       }
+      _adConfigListener = () {
+        if (!mounted) return;
+        _snapshotAdConfig(adConfig);
+      };
+      adConfig.addListener(_adConfigListener!);
     });
   }
 
@@ -375,59 +381,63 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
   Future<void> _fetchConfig() async {
     final url = '${Env.apiBaseUrl}/appconfig/download-screen';
     debugPrint('DownloadScreen ▶ fetching config: $url');
-    try {
-      final response = await http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 65));
+    const maxAttempts = 3;
+    Object? lastErr;
+    StackTrace? lastSt;
 
-      debugPrint('DownloadScreen ◀ status=${response.statusCode}');
-      debugPrint('DownloadScreen ◀ body=${response.body}');
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        final response = await http
+            .get(Uri.parse(url))
+            .timeout(Duration(seconds: 20 + attempt * 5));
 
-      if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        var decoded = jsonDecode(response.body);
-
-        // Some API responses wrap the payload under a top-level "config" key
-        // (same pattern as the existing /appconfig endpoint in main.dart).
-        // Handle both: { "languages_enabled": ... } and { "config": { ... } }.
-        Map<String, dynamic> data;
-        if (decoded is Map<String, dynamic>) {
-          data =
-              decoded.containsKey('config') &&
-                  decoded['config'] is Map<String, dynamic>
-              ? decoded['config'] as Map<String, dynamic>
-              : decoded;
-        } else {
-          throw FormatException(
-            'Unexpected JSON root type: ${decoded.runtimeType}',
-          );
-        }
-
-        final parsed = _DownloadScreenConfig.fromJson(data);
         debugPrint(
-          'DownloadScreen ✓ parsed: '
-          '${parsed.languages.length} languages, '
-          '${parsed.albumEntries.length} album entries '
-          '(${parsed.albumEntries.where((e) => e.enabled).length} enabled)',
+          'DownloadScreen ◀ attempt ${attempt + 1} status=${response.statusCode}',
         );
 
         if (!mounted) return;
-        setState(() {
-          _config = parsed;
-          _configLoaded = true;
-          _configError = null;
-          // Clear selections no longer valid in the refreshed config
-          if (_selectedLanguage != null &&
-              !_config.languages.any((l) => l.label == _selectedLanguage)) {
-            _selectedLanguage = null;
+
+        if (response.statusCode == 200) {
+          var decoded = jsonDecode(response.body);
+
+          Map<String, dynamic> data;
+          if (decoded is Map<String, dynamic>) {
+            data =
+                decoded.containsKey('config') &&
+                    decoded['config'] is Map<String, dynamic>
+                ? decoded['config'] as Map<String, dynamic>
+                : decoded;
+          } else {
+            throw FormatException(
+              'Unexpected JSON root type: ${decoded.runtimeType}',
+            );
           }
-          if (_selectedFileType != null &&
-              !_config.contentTypes.any((t) => t.label == _selectedFileType)) {
-            _selectedFileType = null;
-          }
-        });
-      } else {
+
+          final parsed = _DownloadScreenConfig.fromJson(data);
+          debugPrint(
+            'DownloadScreen ✓ parsed: '
+            '${parsed.languages.length} languages, '
+            '${parsed.albumEntries.length} album entries '
+            '(${parsed.albumEntries.where((e) => e.enabled).length} enabled)',
+          );
+
+          if (!mounted) return;
+          setState(() {
+            _config = parsed;
+            _configLoaded = true;
+            _configError = null;
+            if (_selectedLanguage != null &&
+                !_config.languages.any((l) => l.label == _selectedLanguage)) {
+              _selectedLanguage = null;
+            }
+            if (_selectedFileType != null &&
+                !_config.contentTypes.any((t) => t.label == _selectedFileType)) {
+              _selectedFileType = null;
+            }
+          });
+          return;
+        }
+
         final msg = 'HTTP ${response.statusCode} from $url\n${response.body}';
         debugPrint('DownloadScreen ✗ $msg');
         if (mounted) {
@@ -436,28 +446,41 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
             _configError = msg;
           });
         }
+        return;
+      } on TimeoutException catch (e, st) {
+        lastErr = e;
+        lastSt = st;
+        debugPrint(
+          'DownloadScreen ✗ timeout attempt ${attempt + 1}/$maxAttempts: $e',
+        );
+      } catch (e, st) {
+        lastErr = e;
+        lastSt = st;
+        debugPrint(
+          'DownloadScreen ✗ attempt ${attempt + 1}/$maxAttempts: $e',
+        );
       }
-    } on TimeoutException {
-      const msg = 'Request timed out after 10 s';
-      debugPrint('DownloadScreen ✗ $msg');
-      if (mounted)
-        setState(() {
-          _configLoaded = true;
-          _configError = msg;
-        });
-    } catch (e, st) {
-      final msg = '$e';
-      debugPrint('DownloadScreen ✗ exception: $e\n$st');
-      if (mounted)
-        setState(() {
-          _configLoaded = true;
-          _configError = msg;
-        });
+      if (attempt < maxAttempts - 1) {
+        await Future<void>.delayed(Duration(milliseconds: 400 * (1 << attempt)));
+      }
+    }
+
+    debugPrint('DownloadScreen ✗ giving up: $lastErr\n$lastSt');
+    if (mounted) {
+      setState(() {
+        _configLoaded = true;
+        _configError = '$lastErr';
+      });
     }
   }
 
   @override
   void dispose() {
+    final listener = _adConfigListener;
+    if (listener != null) {
+      adConfigProvider.removeListener(listener);
+      _adConfigListener = null;
+    }
     _searchController.dispose();
     _searchShakeController?.dispose();
     super.dispose();
@@ -537,25 +560,23 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
 
   // ── Build helpers ──────────────────────────────────────────────────────────
 
-  Widget _sectionLabel(String text, IconData icon) => Row(
-    children: [
-      Icon(
-        icon,
-        size: 14,
-        color: Theme.of(context).textTheme.bodyLarge!.color!.withOpacity(0.4),
-      ),
-      const SizedBox(width: 5),
-      Text(
-        text,
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.3,
-          color: Theme.of(context).textTheme.bodyLarge!.color!.withOpacity(0.5),
+  Widget _sectionLabel(String text, IconData icon) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: cs.onSurfaceVariant),
+        const SizedBox(width: 5),
+        Text(
+          text,
+          style: tt.labelLarge?.copyWith(
+            letterSpacing: 0.3,
+            color: cs.onSurfaceVariant,
+          ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 
   Widget _buildLanguageChips() => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -603,12 +624,12 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
                   ),
                   child: Text(
                     lang.label,
-                    style: TextStyle(
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontSize: 13,
-                      fontWeight: sel ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: FontWeight.w800,
                       color: sel
                           ? Colors.white
-                          : Theme.of(context).textTheme.bodyLarge!.color,
+                          : Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                 ),
@@ -665,23 +686,18 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
                           size: 22,
                           color: sel
                               ? const Color(0xFF7C4DFF)
-                              : Theme.of(
-                                  context,
-                                ).textTheme.bodyLarge!.color!.withOpacity(0.5),
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(height: 5),
                         Text(
                           type.label,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: sel
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                            color: sel
-                                ? const Color(0xFF7C4DFF)
-                                : Theme.of(context).textTheme.bodyLarge!.color!
-                                      .withOpacity(0.65),
-                          ),
+                          style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: sel
+                                    ? const Color(0xFF7C4DFF)
+                                    : Theme.of(context).colorScheme.onSurface,
+                              ),
                         ),
                       ],
                     ),
@@ -718,17 +734,15 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
                   decoration: InputDecoration(
                     hintText: 'Movie name, song, artist…',
                     hintStyle: TextStyle(
-                      color: Theme.of(
-                        context,
-                      ).textTheme.bodyLarge!.color!.withOpacity(0.35),
+                      color: context.appOnSurfaceMuted.withValues(alpha: 0.55),
                       fontSize: 14,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w600,
                     ),
                     border: InputBorder.none,
                     prefixIcon: Icon(
                       CupertinoIcons.search,
-                      color: Theme.of(
-                        context,
-                      ).textTheme.bodyLarge!.color!.withOpacity(0.4),
+                      color: context.appOnSurfaceMuted.withValues(alpha: 0.65),
                       size: 18,
                     ),
                     suffixIcon: ValueListenableBuilder<TextEditingValue>(
@@ -737,15 +751,16 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
                           ? IconButton(
                               icon: const Icon(Icons.clear, size: 16),
                               onPressed: () => _searchController.clear(),
-                              color: Colors.grey,
+                              color: context.appOnSurfaceMuted,
                             )
                           : const SizedBox.shrink(),
                     ),
                   ),
-                  style: TextStyle(
-                    fontSize: 15,
-                    color: Theme.of(context).textTheme.bodyLarge!.color,
-                  ),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
                 ),
               ),
             ),
@@ -897,66 +912,51 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
         Icon(
           CupertinoIcons.clock,
           size: 18,
-          color: Theme.of(context).textTheme.bodyLarge!.color!.withOpacity(0.6),
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         const SizedBox(width: 8),
         Text(
           'Browse Old MP3 Archive',
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: Theme.of(
-              context,
-            ).textTheme.bodyLarge!.color!.withOpacity(0.75),
-          ),
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                fontSize: 14,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
         ),
       ],
     ),
   );
 
   // ── Main build ─────────────────────────────────────────────────────────────
-  PreferredSizeWidget _buildAppBar(bool isDark) {
+  PreferredSizeWidget _buildAppBar(bool isDark, {required bool compact}) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     return AppBar(
+      toolbarHeight: compact ? 50 : kToolbarHeight,
+      centerTitle: false,
+      titleSpacing: compact ? 12 : 16,
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            'MP3 Download',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: isDark
-                  ? Theme.of(context).textTheme.bodyLarge!.color
-                  : Colors.white,
-            ),
-          ),
-          Text(
-            'Find songs, albums & artists',
-            style: TextStyle(
-              fontSize: 11,
-              color: isDark
-                  ? Theme.of(
-                      context,
-                    ).textTheme.bodyLarge!.color!.withOpacity(0.5)
-                  : Colors.white.withOpacity(0.75),
-            ),
-          ),
-        ],
-      ),
-      flexibleSpace: isDark
-          ? Container(color: const Color(0xFF121212))
-          : Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+            Text(
+              'MP3 Download',
+              style: tt.headlineSmall?.copyWith(
+                fontSize: compact ? 18 : 22,
+                fontFamily: 'Outfit',
+                color: cs.onSurface,
               ),
             ),
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      elevation: 0,
+            Text(
+              'Find songs, albums & artists',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                fontSize: compact ? 11 : null,
+                color: context.appOnSurfaceMuted,
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -967,7 +967,7 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
     // ── Show a loading shimmer until config is fetched ──────────────────────
     if (!_configLoaded) {
       return Scaffold(
-        appBar: _buildAppBar(isDark), // extract your AppBar into a helper
+        appBar: _buildAppBar(isDark, compact: _wideLandscape(context)),
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: const Center(
           child: CircularProgressIndicator(
@@ -989,50 +989,10 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
         cfg.browseByAlbumEnabled && cfg.albumEntries.any((e) => e.enabled);
     final showOldArchive = cfg.oldArchiveEnabled;
     final showDivider = showBrowse || showOldArchive;
+    final compactAppBar = _wideLandscape(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'MP3 Download',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: isDark
-                    ? Theme.of(context).textTheme.bodyLarge!.color
-                    : Colors.white,
-              ),
-            ),
-            Text(
-              'Find songs, albums & artists',
-              style: TextStyle(
-                fontSize: 11,
-                color: isDark
-                    ? Theme.of(
-                        context,
-                      ).textTheme.bodyLarge!.color!.withOpacity(0.5)
-                    : Colors.white.withOpacity(0.75),
-              ),
-            ),
-          ],
-        ),
-        flexibleSpace: isDark
-            ? Container(color: const Color(0xFF121212))
-            : Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-              ),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        elevation: 0,
-      ),
+      appBar: _buildAppBar(isDark, compact: compactAppBar),
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: RefreshIndicator(
         color: const Color(0xFF7C4DFF),
@@ -1043,6 +1003,7 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
             _configError = null;
             _configLoaded = false;
           });
+          await adConfigProvider.refresh(isPremiumUser: isPremiumUser.value);
           await _fetchConfig();
         },
         child: SingleChildScrollView(
@@ -1139,14 +1100,11 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Text(
                         'OR BROWSE',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.8,
-                          color: Theme.of(
-                            context,
-                          ).textTheme.bodyLarge!.color!.withOpacity(0.35),
-                        ),
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              fontSize: 11,
+                              letterSpacing: 0.8,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
                       ),
                     ),
                     Expanded(
@@ -1177,11 +1135,47 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
                 const SizedBox(height: 4),
                 Container(
                   alignment: Alignment.center,
-                  child: const BannerAdWidget(),
+                  child: StreamBuilder<MediaItem?>(
+                    stream: globalRadioAudioHandler.mediaItem,
+                    builder: (context, radioSnap) {
+                      return StreamBuilder<bool>(
+                        stream: globalMp3QueueService.playbackState
+                            .map((s) => s.playing)
+                            .distinct(),
+                        builder: (context, mp3Snap) {
+                          final hasRadio = radioSnap.data != null;
+                          final hasMp3 = mp3Snap.data ?? false;
+                          final hasAnyMiniPlayer = hasRadio || hasMp3;
+
+                          return Padding(
+                            padding: EdgeInsets.only(
+                                bottom: hasAnyMiniPlayer ? 95 : 10),
+                            child: const BannerAdWidget(),
+                          );
+                        },
+                      );
+                    },
+                  ),
                 ),
               ],
 
-              const SizedBox(height: 10),
+              StreamBuilder<MediaItem?>(
+                stream: globalRadioAudioHandler.mediaItem,
+                builder: (context, radioSnap) {
+                  return StreamBuilder<bool>(
+                    stream: globalMp3QueueService.playbackState
+                        .map((s) => s.playing)
+                        .distinct(),
+                    builder: (context, mp3Snap) {
+                      final hasRadio = radioSnap.data != null;
+                      final hasMp3 = mp3Snap.data ?? false;
+                      final hasAnyMiniPlayer = hasRadio || hasMp3;
+
+                      return SizedBox(height: hasAnyMiniPlayer ? 85 + 95 : 95);
+                    },
+                  );
+                },
+              ),
             ],
           ),
         ),

@@ -155,7 +155,7 @@ class StationCategoryScreen extends StatelessWidget {
                         fit: BoxFit.cover,
                       )
                     : null,
-                color: Colors.grey[300],
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 border: isPlaying
                     ? Border.all(color: const Color(0xFF7C4DFF), width: 3)
                     : null,
@@ -183,7 +183,9 @@ class StationCategoryScreen extends StatelessWidget {
           ),
           Text(
             station.language ?? "Radio",
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
         ],
       ),

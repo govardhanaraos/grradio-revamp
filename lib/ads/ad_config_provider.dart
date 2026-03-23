@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:grradio/api/analytics_service_api.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTANT — single source of truth
@@ -122,6 +125,40 @@ class ScreenAdConfig {
 
   /// All flags disabled — safe fallback on error or when global ads are off.
   static const ScreenAdConfig disabled = ScreenAdConfig();
+
+  /// When [fetchScreenAdConfig] fails but GET /analytics/config/global returned
+  /// ads on — use this so banners/in-list ads are not stuck off.
+  static const ScreenAdConfig fallbackWhenGlobalAdsOn = ScreenAdConfig(
+    adsEnabled: true,
+    bannerEnabled: true,
+    interstitialEnabled: true,
+    interstitialEveryNTaps: 5,
+    inlistEnabled: true,
+    stationsList: InListPlacement(
+      enabled: true,
+      everyNItems: 6,
+      firstAdPosition: 0,
+      maxAds: 0,
+    ),
+    mp3List: InListPlacement(
+      enabled: true,
+      everyNItems: 6,
+      firstAdPosition: 0,
+      maxAds: 0,
+    ),
+    downloadsList: InListPlacement(
+      enabled: true,
+      everyNItems: 6,
+      firstAdPosition: 0,
+      maxAds: 0,
+    ),
+    recordingsList: InListPlacement(
+      enabled: true,
+      everyNItems: 6,
+      firstAdPosition: 0,
+      maxAds: 0,
+    ),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,6 +168,9 @@ class AdConfigProvider extends ChangeNotifier {
   final AnalyticsServiceAPI _api;
 
   AdConfigProvider(this._api);
+
+  static const String _prefsGlobalAdsEnabledKey = 'ads_cfg_global_enabled';
+  static const String _prefsScreenConfigsKey = 'ads_cfg_screen_configs_json';
 
   bool _globalAdsEnabled = false;
   bool _isPremiumUser = false;
@@ -183,6 +223,35 @@ class AdConfigProvider extends ChangeNotifier {
 
   // ── Initialisation ─────────────────────────────────────────────────────────
 
+  /// Hydrates ad flags from SharedPreferences so screens can show/hide ads
+  /// immediately on app start while network refresh runs in background.
+  Future<void> hydrateFromCache({required bool isPremiumUser}) async {
+    _isPremiumUser = isPremiumUser;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _globalAdsEnabled = prefs.getBool(_prefsGlobalAdsEnabledKey) ?? false;
+
+      final raw = prefs.getString(_prefsScreenConfigsKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) {
+          _screenConfigs
+            ..clear()
+            ..addAll({
+              for (final entry in decoded.entries)
+                entry.key: entry.value is Map<String, dynamic>
+                    ? ScreenAdConfig.fromJson(entry.value)
+                    : ScreenAdConfig.disabled,
+            });
+        }
+      }
+    } catch (_) {
+      // Cache parse/read failure should never block ad config init.
+    }
+    _initialized = true;
+    notifyListeners();
+  }
+
   /// Fetches the global flag + all screen configs in one parallel batch.
   /// Because analytics_service_api.dart imports this file and its
   /// fetchScreenAdConfig() returns THIS ScreenAdConfig, the Future.wait
@@ -197,21 +266,30 @@ class AdConfigProvider extends ChangeNotifier {
       return;
     }
 
-    // Typed futures — avoids the List<dynamic> cast ambiguity entirely.
-    final globalFuture = _api.fetchGlobalAdsEnabled();
-    final radioFuture = _api.fetchScreenAdConfig(AdScreen.radio);
-    final playerFuture = _api.fetchScreenAdConfig(AdScreen.player);
-    final mp3Future = _api.fetchScreenAdConfig(AdScreen.mp3Download);
+    _globalAdsEnabled = await _api.fetchGlobalAdsEnabled();
 
-    // Await individually so each result is already strongly typed.
-    // (Future.wait returns List<dynamic> which triggered the bad cast before.)
-    _globalAdsEnabled = await globalFuture;
-    _screenConfigs[AdScreen.radio] = await radioFuture;
-    _screenConfigs[AdScreen.player] = await playerFuture;
-    _screenConfigs[AdScreen.mp3Download] = await mp3Future;
+    final radioResult = await _api.fetchScreenAdConfig(AdScreen.radio);
+    final playerResult = await _api.fetchScreenAdConfig(AdScreen.player);
+    final mp3Result = await _api.fetchScreenAdConfig(AdScreen.mp3Download);
 
+    _screenConfigs[AdScreen.radio] = _mergeScreenFetch(radioResult);
+    _screenConfigs[AdScreen.player] = _mergeScreenFetch(playerResult);
+    _screenConfigs[AdScreen.mp3Download] = _mergeScreenFetch(mp3Result);
+
+    await _saveCache();
     _initialized = true;
     notifyListeners();
+  }
+
+  /// Per-screen GET success uses server flags. On failure, if the global master
+  /// switch is on, use [ScreenAdConfig.fallbackWhenGlobalAdsOn] so UI matches
+  /// `/analytics/config/global` instead of staying permanently disabled.
+  ScreenAdConfig _mergeScreenFetch(
+    ({ScreenAdConfig config, bool fetchedOk}) result,
+  ) {
+    if (result.fetchedOk) return result.config;
+    if (_globalAdsEnabled) return ScreenAdConfig.fallbackWhenGlobalAdsOn;
+    return ScreenAdConfig.disabled;
   }
 
   /// Call whenever premium status changes (e.g. after a purchase).
@@ -225,5 +303,40 @@ class AdConfigProvider extends ChangeNotifier {
   Future<void> refresh({bool? isPremiumUser}) async {
     if (isPremiumUser != null) _isPremiumUser = isPremiumUser;
     await initialize(isPremiumUser: _isPremiumUser);
+  }
+
+  Future<void> _saveCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_prefsGlobalAdsEnabledKey, _globalAdsEnabled);
+      await prefs.setString(
+        _prefsScreenConfigsKey,
+        jsonEncode({
+          for (final entry in _screenConfigs.entries)
+            entry.key: {
+              'ads_enabled': entry.value.adsEnabled,
+              'banner_enabled': entry.value.bannerEnabled,
+              'interstitial_enabled': entry.value.interstitialEnabled,
+              'interstitial_every_n_taps': entry.value.interstitialEveryNTaps,
+              'inlist_enabled': entry.value.inlistEnabled,
+              'stations_list': _placementToJson(entry.value.stationsList),
+              'mp3_list': _placementToJson(entry.value.mp3List),
+              'downloads_list': _placementToJson(entry.value.downloadsList),
+              'recordings_list': _placementToJson(entry.value.recordingsList),
+            },
+        }),
+      );
+    } catch (_) {
+      // Best-effort cache write only.
+    }
+  }
+
+  Map<String, dynamic> _placementToJson(InListPlacement placement) {
+    return {
+      'enabled': placement.enabled,
+      'every_n_items': placement.everyNItems,
+      'first_ad_position': placement.firstAdPosition,
+      'max_ads': placement.maxAds,
+    };
   }
 }

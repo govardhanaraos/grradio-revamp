@@ -2,8 +2,11 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:grradio/ads/ad_config_provider.dart';
 import 'package:grradio/ads/banner_ad_widget.dart';
 import 'package:grradio/main.dart';
+import 'package:grradio/theme/app_theme.dart';
+import 'package:grradio/theme/app_theme_context.dart';
 import 'package:grradio/more/downloadmanagerscreen.dart';
 import 'package:grradio/mp3download/mp3_models.dart';
 import 'package:html/dom.dart' as dom;
@@ -11,6 +14,7 @@ import 'package:html/parser.dart' as parser;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
 
 class OldMp3Browser extends StatefulWidget {
   final String initialUrl;
@@ -606,27 +610,28 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
       appBar: AppBar(
         title: Text(
           'Old MP3 Browser',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                color: Colors.white,
+                fontSize: 20,
+              ),
         ),
         flexibleSpace: Container(
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                Color(0xFF388E3C), // Dark Green
-                Color(0xFF66BB6A), // Light Green
-              ],
+              colors: [AppTheme.brandViolet, AppTheme.brandBlue],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
           ),
         ),
-        backgroundColor: Colors.orange,
+        backgroundColor: Colors.transparent,
+        foregroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(icon: Icon(Icons.arrow_back), onPressed: _goBack),
+        iconTheme: const IconThemeData(color: Colors.white),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: _goBack,
+        ),
       ),
       body: _isLoading
           ? Center(child: CircularProgressIndicator())
@@ -636,7 +641,7 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
                 if (_breadcrumbs.isNotEmpty)
                   Container(
                     padding: EdgeInsets.all(8),
-                    color: Colors.grey[100],
+                    color: context.appSurfaceContainer,
                     child: SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
@@ -645,7 +650,10 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
                           final crumb = entry.value;
                           return Row(
                             children: [
-                              Text(crumb, style: TextStyle(fontSize: 12)),
+                              Text(
+                                crumb,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                               if (index != _breadcrumbs.length - 1)
                                 Padding(
                                   padding: EdgeInsets.symmetric(horizontal: 4),
@@ -666,16 +674,17 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
                           padding: EdgeInsets.all(16),
                           child: Text(
                             'Directories (${_directories.length})',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.orange,
-                            ),
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
                           ),
                         ),
                         ..._directories.map(
                           (directory) => ListTile(
-                            leading: Icon(Icons.folder, color: Colors.orange),
+                            leading: Icon(
+                              Icons.folder,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
                             title: Text(directory.name),
                             /*subtitle: Text(
                               directory.url.length > 50
@@ -694,18 +703,16 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
                           padding: EdgeInsets.all(16),
                           child: Text(
                             'MP3 Files (${_mp3Files.length})',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green,
-                            ),
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: Theme.of(context).colorScheme.secondary,
+                                ),
                           ),
                         ),
                         ..._mp3Files.map(
                           (mp3File) => ListTile(
                             leading: Icon(
                               Icons.music_note,
-                              color: Colors.green,
+                              color: Theme.of(context).colorScheme.secondary,
                             ),
                             title: Text(mp3File.name),
                             /* subtitle: Text(
@@ -727,11 +734,9 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
                           padding: EdgeInsets.all(16),
                           child: Text(
                             'Pages',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue,
-                            ),
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  color: Theme.of(context).colorScheme.tertiary,
+                                ),
                           ),
                         ),
 
@@ -747,15 +752,19 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
                                 child: ChoiceChip(
                                   label: Text(page.name),
                                   selected: isActive,
-                                  selectedColor: Colors.blue.shade200,
-                                  backgroundColor: Colors.grey.shade200,
+                                  selectedColor: Theme.of(context)
+                                      .colorScheme
+                                      .primaryContainer
+                                      .withValues(alpha: 0.5),
+                                  backgroundColor: context.appSurfaceContainer,
                                   labelStyle: TextStyle(
                                     color: isActive
-                                        ? Colors.blue.shade900
-                                        : Colors.black,
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context).colorScheme.onSurface,
                                     fontWeight: isActive
                                         ? FontWeight.bold
                                         : FontWeight.normal,
+                                    fontFamily: 'Outfit',
                                   ),
                                   onSelected: (_) =>
                                       _navigateToDirectory(page.url),
@@ -777,23 +786,33 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
                                 Icon(
                                   Icons.search_off,
                                   size: 64,
-                                  color: Colors.grey,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                                 ),
                                 SizedBox(height: 16),
                                 Text(
                                   'No directories or MP3 files found',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.grey,
-                                  ),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleMedium
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                      ),
                                 ),
                                 SizedBox(height: 8),
                                 Text(
                                   'Check debug console for parsing details',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey,
-                                  ),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                      ),
                                 ),
                               ],
                             ),
@@ -802,12 +821,18 @@ class _OldMp3BrowserState extends State<OldMp3Browser> {
                     ],
                   ),
                 ),
-                if (globalAdsEnabled)
-                  Container(
-                    alignment: Alignment.center,
-                    height: 60, // Guaranteed space for the ad
-                    child: const BannerAdWidget(),
-                  ),
+                Consumer<AdConfigProvider>(
+                  builder: (context, ad, _) {
+                    if (!ad.globalAdsEnabled) {
+                      return const SizedBox.shrink();
+                    }
+                    return Container(
+                      alignment: Alignment.center,
+                      height: 60, // Guaranteed space for the ad
+                      child: const BannerAdWidget(),
+                    );
+                  },
+                ),
               ],
             ),
     );

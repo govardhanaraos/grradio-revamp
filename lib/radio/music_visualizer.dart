@@ -4,14 +4,19 @@ import 'package:flutter/cupertino.dart';
 
 class MusicVisualizer extends StatelessWidget {
   final bool isPlaying;
-  const MusicVisualizer({required this.isPlaying});
+  final int barCount;
+
+  const MusicVisualizer({
+    required this.isPlaying,
+    this.barCount = 15,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: List.generate(
-        15,
+        barCount,
         (index) => VisualizerBar(isPlaying: isPlaying),
       ),
     );

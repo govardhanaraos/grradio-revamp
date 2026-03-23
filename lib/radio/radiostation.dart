@@ -40,34 +40,67 @@ class RadioStation {
     this.page,
   });
 
-  // Factory constructor to create a RadioStation from a MongoDB document map
-  factory RadioStation.fromMap(Map<String, dynamic> map) {
-    // MongoDB documents use '_id', which might be an ObjectId.
-    // We try to convert it to a string for the 'id' field.
-    final idString = map['_id']?.toString() ?? map['id']?.toString() ?? '';
+  /// Picks a non-empty logo URL from common API field names so Hive cache + UI show art.
+  static String? _parseLogoUrl(Map<String, dynamic> map) {
+    String? asTrimmedString(dynamic v) {
+      if (v == null) return null;
+      final s = v.toString().trim();
+      return s.isEmpty ? null : s;
+    }
 
-    // --- FIXES FOR FIELD MISMATCH ---
-    // 1. JSON field for language is 'Language' (capital L), map it to lowercase 'language'.
+    for (final key in const [
+      'logoUrl',
+      'logo',
+      'image',
+      'imageUrl',
+      'artwork',
+      'art',
+      'coverUrl',
+      'cover_url',
+      'thumbnail',
+      'photo',
+      'icon',
+    ]) {
+      final u = asTrimmedString(map[key]);
+      if (u != null) return u;
+    }
+    return null;
+  }
+
+  /// Parses the stations API JSON object, e.g.:
+  /// ```json
+  /// {
+  ///   "id": "0010",
+  ///   "name": "Akashvani Almora",
+  ///   "logoUrl": "https://...",
+  ///   "streamUrl": "https://...",
+  ///   "Language": "Garhwali, Hindi",
+  ///   "genre": "UTTARAKHAND",
+  ///   "page": "channel-akashvani-almora-..."
+  /// }
+  /// ```
+  /// `genre` holds the region/state label; `genre` and `state` on the model both use that value.
+  factory RadioStation.fromMap(Map<String, dynamic> map) {
+    final rawId = map['id']?.toString().trim();
+    final idString = (rawId != null && rawId.isNotEmpty)
+        ? rawId
+        : (map['_id']?.toString() ?? '');
+
     final languageFromMap =
         map['Language'] as String? ?? map['language'] as String?;
 
-    // 2. The state information (e.g., UTTAR PRADESH) is currently in the 'genre' field in the JSON.
-    // We will assign the JSON 'genre' value to the model's 'state' field for better filtering.
-    final stateFromMap = map['genre'] as String?;
+    final region = map['genre'] as String?;
     final pageFromMap = map['page'] as String?;
 
     return RadioStation(
       id: idString,
-      name: map['name'] as String,
-      streamUrl: map['streamUrl'] as String,
-      // Use null-aware operators to safely assign optional fields
-      logoUrl: map['logoUrl'] as String?,
+      name: map['name']?.toString().trim() ?? '',
+      streamUrl: map['streamUrl']?.toString().trim() ?? '',
+      logoUrl: _parseLogoUrl(map),
       language: languageFromMap,
-      genre:
-          map['genre']
-              as String?, // Keeping the original genre field mapped, but the value is the state
-      state: stateFromMap, // Assigning the state/location value here
-      page: pageFromMap, // Assigning the state/location value here
+      genre: region,
+      state: region,
+      page: pageFromMap,
     );
   }
 

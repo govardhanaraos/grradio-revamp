@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
@@ -30,6 +31,7 @@ class ExpandedPlayerContent extends StatefulWidget {
   final Function(bool)? onRecordingStatusChanged;
   final PanelController? pc;
   final VoidCallback? onNavigateToRecordings;
+  final bool sidePanel;
 
   const ExpandedPlayerContent({
     Key? key,
@@ -39,6 +41,7 @@ class ExpandedPlayerContent extends StatefulWidget {
     this.onRecordingStatusChanged,
     this.pc,
     this.onNavigateToRecordings,
+    this.sidePanel = false,
   }) : super(key: key);
 
   @override
@@ -69,7 +72,12 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
 
   bool _shuffleEnabled = false;
   String _repeatMode = 'LoopMode.off';
+  int _sleepRemainingSeconds = 0;
+  bool _sleepTimerActive = false;
   StreamSubscription<Duration>? _positionSub;
+
+  // Throttle UI rebuilds caused by frequent positionStream events.
+  int _lastPositionUiUpdateMs = 0;
 
   /// While dragging the seek bar, parent scroll is disabled and stream position
   /// does not fight the thumb.
@@ -127,8 +135,13 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
       if (dur != _duration) setState(() => _duration = dur);
     });
     _positionSub = globalRadioAudioHandler.positionStream.listen((pos) {
-      if (mounted && !_sliderDragging) setState(() => _position = pos);
+      if (!mounted || _sliderDragging) return;
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      if (nowMs - _lastPositionUiUpdateMs < 250) return;
+      _lastPositionUiUpdateMs = nowMs;
+      setState(() => _position = pos);
     });
+    _syncSleepTimerStateFromHandler();
     _customEventSub = widget.audioHandler.customEvent.listen((event) {
       if (event is! Map) return;
       final type = event['event'];
@@ -139,6 +152,12 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
       } else if (type == 'repeat_changed') {
         setState(() {
           _repeatMode = event['mode'] as String;
+        });
+      } else if (type == 'sleep_timer_update') {
+        if (!mounted) return;
+        setState(() {
+          _sleepTimerActive = (event['active'] as bool?) ?? false;
+          _sleepRemainingSeconds = (event['remaining_seconds'] as int?) ?? 0;
         });
       } else if (type == 'record_status') {
         final isRec = event['isRecording'] as bool? ?? false;
@@ -232,6 +251,18 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
     widget.audioHandler.skipToNext();
   }
 
+  void _syncSleepTimerStateFromHandler() {
+    try {
+      final Duration? remaining = widget.audioHandler.getSleepTimerRemaining()
+          as Duration?;
+      if (!mounted) return;
+      setState(() {
+        _sleepTimerActive = remaining != null && remaining > Duration.zero;
+        _sleepRemainingSeconds = remaining?.inSeconds ?? 0;
+      });
+    } catch (_) {}
+  }
+
   // ── Progress timer — polls playbackState.position every 500 ms ───────────
   void _startProgressTimer() {
     _progressTimer?.cancel();
@@ -251,6 +282,17 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
       0.0,
       1.0,
     );
+  }
+
+  /// Elapsed time shown next to the scrubber (preview position while dragging).
+  Duration get _displayPosition {
+    if (_duration.inMilliseconds <= 0) return Duration.zero;
+    if (_sliderDragging) {
+      return Duration(
+        milliseconds: (_sliderDragValue * _duration.inMilliseconds).round(),
+      );
+    }
+    return _position;
   }
 
   double get _sliderDisplayValue {
@@ -276,25 +318,197 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final artSize = screenWidth * 0.72;
+    final mq = MediaQuery.of(context);
+    final screenWidth = mq.size.width;
+    final screenHeight = mq.size.height;
+    final bool sidePanelMode = widget.sidePanel;
+    final isLandscapeWide =
+        mq.orientation == Orientation.landscape && screenWidth >= 600;
+    final double artSize = sidePanelMode
+        ? math
+            .min(screenWidth * 0.30 * 0.8, 200.0)
+            .clamp(90.0, 200.0)
+        : isLandscapeWide
+            ? math.min(
+                math.min(screenHeight * 0.58, screenWidth * 0.38),
+                320.0,
+              ).clamp(200.0, 340.0)
+            : screenWidth * 0.72;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
 
-    return SingleChildScrollView(
-      physics: _sliderDragging
-          ? const NeverScrollableScrollPhysics()
-          : const BouncingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
+    final headerRow = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          sidePanelMode
+              ? const SizedBox(width: 44)
+              : GestureDetector(
+                  onTap: widget.pc == null ? null : () => widget.pc!.close(),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isDark
+                          ? Colors.white.withOpacity(0.07)
+                          : Colors.black.withOpacity(0.04),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 24,
+                      color: isDark ? Colors.white70 : Colors.black54,
+                    ),
+                  ),
+                ),
+          Column(
+            children: [
+              Text(
+                _isRadioStation ? 'LIVE RADIO' : 'NOW PLAYING',
+                style: tt.labelMedium?.copyWith(
+                  letterSpacing: 1.5,
+                  color: _isRadioStation
+                      ? const Color(0xFF7C4DFF)
+                      : cs.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          ScaleTransition(
+            scale: _shareBounce,
+            child: GestureDetector(
+              onTap: _shareStation,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF7C4DFF).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.ios_share_rounded,
+                  size: 22,
+                  color: Color(0xFF7C4DFF),
+                ),
+              ),
             ),
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.start,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const SizedBox(height: 12),
+          ),
+        ],
+      ),
+    );
 
-            // ── Drag handle ──────────────────────────────────────────────
+    final recordingPill = _isRecording
+        ? TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 300),
+            builder: (_, v, child) => Opacity(opacity: v, child: child),
+            child: Container(
+              margin: EdgeInsets.only(bottom: sidePanelMode ? 8 : 14),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.red.shade700,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.red.withOpacity(0.35),
+                    blurRadius: 14,
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _BlinkingDot(),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'REC • CONTROLS LOCKED',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+        : const SizedBox.shrink();
+
+    final albumArt = Container(
+      width: artSize,
+      height: artSize,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF7C4DFF).withOpacity(0.28),
+            blurRadius: 40,
+            offset: const Offset(0, 14),
+          ),
+          BoxShadow(
+            color: const Color(0xFF448AFF).withOpacity(0.14),
+            blurRadius: 60,
+            offset: const Offset(0, 20),
+          ),
+        ],
+        image: widget.mediaItem?.artUri != null
+            ? DecorationImage(
+                image: NetworkImage(
+                  widget.mediaItem!.artUri.toString(),
+                ),
+                fit: BoxFit.cover,
+              )
+            : null,
+        gradient: widget.mediaItem?.artUri == null
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: isDark
+                    ? [const Color(0xFF1A0A3E), const Color(0xFF0D2040)]
+                    : [
+                        const Color(0xFFF0EEFF),
+                        const Color(0xFFE0F0FF),
+                      ],
+              )
+            : null,
+      ),
+      child: widget.mediaItem?.artUri == null
+          ? Center(
+              child: Icon(
+                _isRadioStation ? Icons.radio : Icons.music_note,
+                size: artSize * 0.32,
+                color: const Color(0xFF7C4DFF).withOpacity(0.5),
+              ),
+            )
+          : null,
+    );
+
+    final visualizerBlock = SizedBox(
+      height: sidePanelMode ? 38 : (isLandscapeWide ? 40 : 52),
+      child: MusicVisualizer(
+        isPlaying: widget.isPlaying,
+        // Landscape/right-side panel is narrow; fewer animated bars reduces
+        // main-thread work and helps prevent "Skipped frames".
+        barCount: sidePanelMode ? 10 : (isLandscapeWide ? 12 : 15),
+      ),
+    );
+
+    final bool disableScroll = isLandscapeWide || sidePanelMode;
+
+    final Widget columnContent = Padding(
+      padding: EdgeInsets.only(bottom: sidePanelMode ? 0 : 32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(height: sidePanelMode ? 8 : 12),
+
+          // ── Drag handle ──────────────────────────────────────────────
+          if (!sidePanelMode)
             Container(
               width: 40,
               height: 4,
@@ -303,459 +517,363 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
-            const SizedBox(height: 12),
+          if (!sidePanelMode) SizedBox(height: sidePanelMode ? 8 : 12),
 
-            // ── Header row: close chevron + share ────────────────────────
+          if (isLandscapeWide && !sidePanelMode)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Down chevron to collapse
-                  GestureDetector(
-                    onTap: () => widget.pc?.close(),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? Colors.white.withOpacity(0.07)
-                            : Colors.black.withOpacity(0.04),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        size: 24,
-                        color: isDark ? Colors.white70 : Colors.black54,
-                      ),
+                  Expanded(
+                    flex: 46,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        albumArt,
+                        const SizedBox(height: 12),
+                        visualizerBlock,
+                      ],
                     ),
                   ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 54,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        headerRow,
+                        const SizedBox(height: 12),
+                        recordingPill,
+                        _buildMetaIcyAndProgressSection(
+                            tt, cs, isLandscapeWide),
+                        _buildTransportAndActions(
+                          tt,
+                          compact: sidePanelMode,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else ...[
+            headerRow,
+            SizedBox(height: sidePanelMode ? 10 : 18),
+            recordingPill,
+            albumArt,
+            SizedBox(height: sidePanelMode ? 14 : 24),
+            visualizerBlock,
+            SizedBox(height: sidePanelMode ? 10 : 18),
+            _buildMetaIcyAndProgressSection(tt, cs, isLandscapeWide),
+            _buildTransportAndActions(tt, compact: sidePanelMode),
+          ],
+        ],
+      ),
+    );
 
-                  // NOW PLAYING label
-                  Column(
+    if (sidePanelMode) {
+      // Scale the entire expanded player to fit the available panel height,
+      // ensuring all controls are visible without scrolling.
+      return SizedBox.expand(
+        child: LayoutBuilder(
+          builder: (context, constraints) => FittedBox(
+            fit: BoxFit.fitHeight,
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: constraints.maxWidth,
+                minHeight: constraints.maxHeight,
+              ),
+              child: columnContent,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      physics: _sliderDragging
+          ? const NeverScrollableScrollPhysics()
+          : disableScroll
+              ? const NeverScrollableScrollPhysics()
+              : const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics(),
+                ),
+      child: columnContent,
+    );
+  }
+
+  /// Title, artist, ICY, seek bar (local files).
+  Widget _buildMetaIcyAndProgressSection(
+    TextTheme tt,
+    ColorScheme cs,
+    bool isLandscapeWide,
+  ) {
+    final bool compact = isLandscapeWide || widget.sidePanel;
+    final metaHPad = compact ? 10.0 : 28.0;
+    final icyHMargin = compact ? 6.0 : 32.0;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: metaHPad),
+          child: Text(
+            widget.mediaItem?.title ?? 'Station Name',
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tt.titleLarge?.copyWith(
+              fontSize: compact ? 18 : (isLandscapeWide ? 20 : 22),
+              color: cs.onSurface,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        if (!_isRadioStation) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: isLandscapeWide ? 12 : 24),
+            child: Column(
+              children: [
+                SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 3.5,
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 6,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 14,
+                    ),
+                    activeTrackColor: const Color(0xFF7C4DFF),
+                    inactiveTrackColor: const Color(
+                      0xFF7C4DFF,
+                    ).withOpacity(0.18),
+                    thumbColor: const Color(0xFF7C4DFF),
+                    overlayColor: const Color(0xFF7C4DFF).withOpacity(0.15),
+                  ),
+                  child: Slider(
+                    value: _sliderDisplayValue,
+                    onChangeStart: _duration.inMilliseconds > 0
+                        ? (_) {
+                            setState(() {
+                              _sliderDragging = true;
+                              _sliderDragValue = _progressValue;
+                            });
+                          }
+                        : null,
+                    onChanged: _duration.inMilliseconds > 0
+                        ? (v) {
+                            setState(() => _sliderDragValue = v);
+                          }
+                        : null,
+                    onChangeEnd: _duration.inMilliseconds > 0
+                        ? (v) {
+                            _onSeek(v);
+                            setState(() => _sliderDragging = false);
+                          }
+                        : null,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        _isRadioStation ? 'LIVE RADIO' : 'NOW PLAYING',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.5,
-                          color: _isRadioStation
-                              ? const Color(0xFF7C4DFF)
-                              : Colors.grey[500],
+                        _formatDuration(_displayPosition),
+                        style: tt.labelMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                      Text(
+                        _formatDuration(_duration),
+                        style: tt.labelMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
                         ),
                       ),
                     ],
-                  ),
-
-                  // Share button
-                  ScaleTransition(
-                    scale: _shareBounce,
-                    child: GestureDetector(
-                      onTap: _shareStation,
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF7C4DFF).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Icon(
-                          Icons.ios_share_rounded,
-                          size: 22,
-                          color: Color(0xFF7C4DFF),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 18),
-
-            // ── Recording status pill ─────────────────────────────────────
-            if (_isRecording)
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0, end: 1),
-                duration: const Duration(milliseconds: 300),
-                builder: (_, v, child) => Opacity(opacity: v, child: child),
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade700,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.red.withOpacity(0.35),
-                        blurRadius: 14,
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _BlinkingDot(),
-                      const SizedBox(width: 6),
-                      const Text(
-                        'REC • CONTROLS LOCKED',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-            // 1. Album Art ────────────────────────────────────────────────
-            Container(
-              width: artSize,
-              height: artSize,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF7C4DFF).withOpacity(0.28),
-                    blurRadius: 40,
-                    offset: const Offset(0, 14),
-                  ),
-                  BoxShadow(
-                    color: const Color(0xFF448AFF).withOpacity(0.14),
-                    blurRadius: 60,
-                    offset: const Offset(0, 20),
-                  ),
-                ],
-                image: widget.mediaItem?.artUri != null
-                    ? DecorationImage(
-                        image: NetworkImage(
-                          widget.mediaItem!.artUri.toString(),
-                        ),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
-                gradient: widget.mediaItem?.artUri == null
-                    ? LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: isDark
-                            ? [const Color(0xFF1A0A3E), const Color(0xFF0D2040)]
-                            : [
-                                const Color(0xFFF0EEFF),
-                                const Color(0xFFE0F0FF),
-                              ],
-                      )
-                    : null,
-              ),
-              child: widget.mediaItem?.artUri == null
-                  ? Center(
-                      child: Icon(
-                        _isRadioStation ? Icons.radio : Icons.music_note,
-                        size: artSize * 0.32,
-                        color: const Color(0xFF7C4DFF).withOpacity(0.5),
-                      ),
-                    )
-                  : null,
-            ),
-
-            const SizedBox(height: 24),
-
-            // 2. Music Visualizer ─────────────────────────────────────────
-            SizedBox(
-              height: 52,
-              child: MusicVisualizer(isPlaying: widget.isPlaying),
-            ),
-            const SizedBox(height: 18),
-
-            // 3. Metadata + ICY track title ────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 28),
-              child: Text(
-                widget.mediaItem?.title ?? 'Station Name',
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (_isRadioStation)
-                  const Icon(Icons.radio, size: 14, color: Color(0xFF7C4DFF)),
-                if (_isRadioStation) const SizedBox(width: 4),
-                Text(
-                  widget.mediaItem?.artist ?? 'Genre',
-                  style: const TextStyle(
-                    fontSize: 15,
-                    color: Color(0xFF7C4DFF),
                   ),
                 ),
               ],
             ),
+          ),
+          SizedBox(height: isLandscapeWide ? 8 : 16),
+        ] else
+          SizedBox(height: isLandscapeWide ? 8 : 30),
+      ],
+    );
+  }
 
-            // ICY / Now-playing metadata row
-            if (_icyTitle != null) ...[
-              const SizedBox(height: 8),
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 32),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 5,
-                ),
+  Widget _buildTransportAndActions(
+    TextTheme tt, {
+    required bool compact,
+  }) {
+    final double skipSize = compact ? 34 : 40;
+    final double playSize = compact ? 62 : 76;
+    final double gap = compact ? 12 : 18;
+    final double playIconSize = compact ? 32 : 38;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _ControlButton(
+              icon: Icons.skip_previous_rounded,
+              size: skipSize,
+              locked: _isRecording,
+              onTap: _onSkipPrevious,
+            ),
+            SizedBox(width: gap),
+            GestureDetector(
+              onTap: _onPlayPause,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: playSize,
+                height: playSize,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF7C4DFF).withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: const Color(0xFF7C4DFF).withOpacity(0.2),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.music_note_rounded,
-                      size: 13,
-                      color: Color(0xFF7C4DFF),
-                    ),
-                    const SizedBox(width: 5),
-                    Flexible(
-                      child: Text(
-                        _icyTitle!,
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF7C4DFF),
-                          fontStyle: FontStyle.italic,
+                  shape: BoxShape.circle,
+                  gradient: _isRecording
+                      ? null
+                      : const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
                         ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            // ── Progress bar + time labels (local files only) ─────────────
-            if (!_isRadioStation) ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  children: [
-                    SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 3.5,
-                        thumbShape: const RoundSliderThumbShape(
-                          enabledThumbRadius: 6,
-                        ),
-                        overlayShape: const RoundSliderOverlayShape(
-                          overlayRadius: 14,
-                        ),
-                        activeTrackColor: const Color(0xFF7C4DFF),
-                        inactiveTrackColor: const Color(
-                          0xFF7C4DFF,
-                        ).withOpacity(0.18),
-                        thumbColor: const Color(0xFF7C4DFF),
-                        overlayColor: const Color(0xFF7C4DFF).withOpacity(0.15),
-                      ),
-                      child: Slider(
-                        value: _sliderDisplayValue,
-                        onChangeStart: _duration.inMilliseconds > 0
-                            ? (_) {
-                                setState(() {
-                                  _sliderDragging = true;
-                                  _sliderDragValue = _progressValue;
-                                });
-                              }
-                            : null,
-                        onChanged: _duration.inMilliseconds > 0
-                            ? (v) {
-                                setState(() => _sliderDragValue = v);
-                                _onSeek(v);
-                              }
-                            : null,
-                        onChangeEnd: _duration.inMilliseconds > 0
-                            ? (_) {
-                                setState(() => _sliderDragging = false);
-                              }
-                            : null,
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 6),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            _formatDuration(_position),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[500],
-                            ),
-                          ),
-                          Text(
-                            _formatDuration(_duration),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[500],
-                            ),
+                  color: _isRecording ? Colors.grey.shade700 : null,
+                  boxShadow: _isRecording
+                      ? []
+                      : [
+                          BoxShadow(
+                            color: const Color(
+                              0xFF7C4DFF,
+                            ).withOpacity(0.45),
+                            blurRadius: 20,
+                            offset: const Offset(0, 6),
                           ),
                         ],
-                      ),
-                    ),
-                  ],
                 ),
-              ),
-              const SizedBox(height: 16),
-            ] else
-              const SizedBox(height: 30),
-
-            // 4. Playback controls ─────────────────────────────────────────
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _ControlButton(
-                  icon: Icons.skip_previous_rounded,
-                  size: 40,
-                  locked: _isRecording,
-                  onTap: _onSkipPrevious,
-                ),
-                const SizedBox(width: 18),
-
-                // Main play/pause circle
-                GestureDetector(
-                  onTap: _onPlayPause,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 76,
-                    height: 76,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: _isRecording
-                          ? null
-                          : const LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                              colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
-                            ),
-                      color: _isRecording ? Colors.grey.shade700 : null,
-                      boxShadow: _isRecording
-                          ? []
-                          : [
-                              BoxShadow(
-                                color: const Color(
-                                  0xFF7C4DFF,
-                                ).withOpacity(0.45),
-                                blurRadius: 20,
-                                offset: const Offset(0, 6),
-                              ),
-                            ],
-                    ),
-                    child: StreamBuilder<PlaybackState>(
-                      stream: globalRadioAudioHandler.playbackState,
-                      builder: (context, snapshot) {
-                        final state = snapshot.data?.processingState;
-                        if (state == AudioProcessingState.loading ||
-                            state == AudioProcessingState.buffering) {
-                          return const Center(
-                            child: SizedBox(
-                              width: 28,
-                              height: 28,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2.5,
-                              ),
-                            ),
-                          );
-                        }
-                        return Center(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 200),
-                            transitionBuilder: (child, anim) =>
-                                ScaleTransition(scale: anim, child: child),
-                            child: Icon(
-                              widget.isPlaying
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
-                              key: ValueKey(widget.isPlaying),
-                              size: 38,
-                              color: Colors.white,
-                            ),
+                child: StreamBuilder<PlaybackState>(
+                  stream: globalRadioAudioHandler.playbackState,
+                  builder: (context, snapshot) {
+                    final state = snapshot.data?.processingState;
+                    if (state == AudioProcessingState.loading ||
+                        state == AudioProcessingState.buffering) {
+                      return const Center(
+                        child: SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2.5,
                           ),
-                        );
-                      },
-                    ),
-                  ),
+                        ),
+                      );
+                    }
+                    return Center(
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        transitionBuilder: (child, anim) =>
+                            ScaleTransition(scale: anim, child: child),
+                        child: Icon(
+                          widget.isPlaying
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          key: ValueKey(widget.isPlaying),
+                          size: playIconSize,
+                          color: Colors.white,
+                        ),
+                      ),
+                    );
+                  },
                 ),
-                const SizedBox(width: 18),
-
-                _ControlButton(
-                  icon: Icons.skip_next_rounded,
-                  size: 40,
-                  locked: _isRecording,
-                  onTap: _onSkipNext,
-                ),
-              ],
+              ),
             ),
-
-            if (_isRecording)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Text(
-                  'Stop recording to switch stations',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.red.shade400,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ),
-
-            const SizedBox(height: 30),
-
-            // 5. Action row: Record + Recordings ──────────────────────────
-            //    • Radio station  → Record button + Recordings shortcut
-            //    • Local files    → Recordings shortcut only (no Record)
-            if (widget.mediaItem != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 40),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    if (_isRadioStation) ...[
-                      _buildRecordButton(),
-                      Container(
-                        width: 1,
-                        height: 64,
-                        color: Colors.grey.withOpacity(0.18),
-                      ),
-                      _buildRecordingsButton(),
-                    ] else ...[
-                      _buildShuffleButton(),
-                      Container(
-                        width: 1,
-                        height: 64,
-                        color: Colors.grey.withOpacity(0.18),
-                      ),
-                      _buildRepeatButton(),
-                    ],
-                  ],
-                ),
-              ),
+            SizedBox(width: gap),
+            _ControlButton(
+              icon: Icons.skip_next_rounded,
+              size: skipSize,
+              locked: _isRecording,
+              onTap: _onSkipNext,
+            ),
           ],
         ),
-      ),
+        if (_isRecording)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: Text(
+              'Stop recording to switch stations',
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.red.shade400,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          ),
+        SizedBox(height: compact ? 12 : 24),
+        if (widget.mediaItem != null)
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 24),
+            child: Transform.scale(
+              scale: compact ? 0.9 : 1.0,
+              alignment: Alignment.center,
+              child: compact
+                  ? Wrap(
+                      alignment: WrapAlignment.spaceEvenly,
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        if (_isRadioStation) ...[
+                          _buildRecordButton(),
+                          _buildSleepTimerButton(),
+                          _buildRecordingsButton(),
+                        ] else ...[
+                          _buildShuffleButton(),
+                          _buildSleepTimerButton(),
+                          _buildRepeatButton(),
+                        ],
+                      ],
+                    )
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        if (_isRadioStation) ...[
+                          _buildRecordButton(),
+                          Container(
+                            width: 1,
+                            height: 64,
+                            color: Colors.grey.withOpacity(0.18),
+                          ),
+                          _buildSleepTimerButton(),
+                          Container(
+                            width: 1,
+                            height: 64,
+                            color: Colors.grey.withOpacity(0.18),
+                          ),
+                          _buildRecordingsButton(),
+                        ] else ...[
+                          _buildShuffleButton(),
+                          Container(
+                            width: 1,
+                            height: 64,
+                            color: Colors.grey.withOpacity(0.18),
+                          ),
+                          _buildSleepTimerButton(),
+                          Container(
+                            width: 1,
+                            height: 64,
+                            color: Colors.grey.withOpacity(0.18),
+                          ),
+                          _buildRepeatButton(),
+                        ],
+                      ],
+                    ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -852,11 +970,9 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
                 : Text(
                     'Record',
                     key: const ValueKey('idle'),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade500,
-                      fontWeight: FontWeight.w500,
-                    ),
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                   ),
           ),
         ],
@@ -892,11 +1008,9 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
             const SizedBox(height: 8),
             Text(
               'Recordings',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey.shade500,
-                fontWeight: FontWeight.w500,
-              ),
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             ),
           ],
         ),
@@ -906,6 +1020,7 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
 
   Widget _buildShuffleButton() {
     final isActive = _shuffleEnabled;
+    final cs = Theme.of(context).colorScheme;
 
     return GestureDetector(
       onTap: () {
@@ -931,14 +1046,15 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
           Icons.shuffle, // ← ALWAYS use this one
           size: 26,
           color: isActive
-              ? const Color(0xFF7C4DFF) // purple when active
-              : Colors.white.withOpacity(0.55), // dimmed when inactive
+              ? const Color(0xFF7C4DFF)
+              : cs.onSurfaceVariant.withValues(alpha: 0.72),
         ),
       ),
     );
   }
 
   Widget _buildRepeatButton() {
+    final cs = Theme.of(context).colorScheme;
     final mode = _repeatMode; // "LoopMode.off", "LoopMode.one", "LoopMode.all"
 
     IconData icon;
@@ -975,9 +1091,125 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
           size: 26,
           color: isActive
               ? const Color(0xFF7C4DFF)
-              : Colors.white.withOpacity(0.65),
+              : cs.onSurfaceVariant.withValues(alpha: 0.72),
         ),
       ),
+    );
+  }
+
+  Widget _buildSleepTimerButton() {
+    final cs = Theme.of(context).colorScheme;
+    final isActive = _sleepTimerActive;
+    return GestureDetector(
+      onTap: _showSleepTimerSheet,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isActive
+                  ? const Color(0xFF7C4DFF).withOpacity(0.15)
+                  : Colors.grey.withOpacity(0.12),
+              border: Border.all(
+                color: isActive
+                    ? const Color(0xFF7C4DFF)
+                    : Colors.grey.withOpacity(0.25),
+                width: 1.2,
+              ),
+            ),
+            child: Icon(
+              Icons.bedtime_rounded,
+              size: 24,
+              color: isActive
+                  ? const Color(0xFF7C4DFF)
+                  : cs.onSurfaceVariant.withValues(alpha: 0.72),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isActive
+                ? _formatSleepRemaining(_sleepRemainingSeconds)
+                : 'Sleep',
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatSleepRemaining(int totalSeconds) {
+    if (totalSeconds <= 0) return 'Sleep';
+    final minutes = (totalSeconds / 60).ceil();
+    if (minutes >= 60) {
+      final hours = minutes ~/ 60;
+      final remMins = minutes % 60;
+      if (remMins == 0) return '${hours}h';
+      return '${hours}h ${remMins}m';
+    }
+    return '${minutes}m';
+  }
+
+  Future<void> _showSleepTimerSheet() async {
+    HapticFeedback.selectionClick();
+    final options = <int>[15, 30, 45, 60, 90];
+    await showModalBottomSheet<void>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Sleep timer',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final mins in options)
+                      ActionChip(
+                        label: Text('$mins min'),
+                        onPressed: () async {
+                          Navigator.of(context).pop();
+                          await widget.audioHandler.setSleepTimer(
+                            Duration(minutes: mins),
+                          );
+                          _syncSleepTimerStateFromHandler();
+                        },
+                      ),
+                  ],
+                ),
+                if (_sleepTimerActive) ...[
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: () async {
+                      Navigator.of(context).pop();
+                      await widget.audioHandler.cancelSleepTimer();
+                      _syncSleepTimerStateFromHandler();
+                    },
+                    icon: const Icon(Icons.close_rounded),
+                    label: const Text('Cancel sleep timer'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

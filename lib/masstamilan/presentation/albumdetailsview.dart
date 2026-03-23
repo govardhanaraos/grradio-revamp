@@ -146,7 +146,7 @@ class _AlbumDetailsPageState extends State<AlbumDetailsPage> {
               const SizedBox(height: 10),
 
               // Track List
-              ...album.tracks.map(_trackTile).toList(),
+              ...album.tracks.map((t) => _trackTile(context, t)).toList(),
             ],
           );
         },
@@ -195,7 +195,7 @@ class _AlbumDetailsPageState extends State<AlbumDetailsPage> {
     );
   }
 
-  Widget _trackTile(Track t) {
+  Widget _trackTile(BuildContext context, Track t) {
     return Card(
       elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -239,7 +239,9 @@ class _AlbumDetailsPageState extends State<AlbumDetailsPage> {
             Text(t.singers, style: const TextStyle(fontSize: 14)),
             Text(
               "Duration: ${t.duration}",
-              style: const TextStyle(fontSize: 13, color: Colors.grey),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             ),
 
             const SizedBox(height: 10),

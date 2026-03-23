@@ -19,25 +19,7 @@ class ContactSupportScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Contact Support',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
-        centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.white),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-      ),
+      appBar: AppBar(title: const Text('Contact Support'), centerTitle: true),
       body: Center(
         child: Card(
           elevation: 4,
@@ -64,15 +46,19 @@ class ContactSupportScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
+                Text(
                   'Need Help?',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  style: Theme.of(context).textTheme.headlineMedium,
                 ),
                 const SizedBox(height: 10),
                 Text(
                   'You can reach our support team at:',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
                 const SizedBox(height: 20),
                 // Tappable email — uses Env.supportEmail so both display
@@ -87,11 +73,9 @@ class ContactSupportScreen extends StatelessWidget {
                     ),
                     child: Text(
                       Env.supportEmail,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Color(0xFF7C4DFF),
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        color: const Color(0xFF7C4DFF),
                         decoration: TextDecoration.underline,
-                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -100,7 +84,11 @@ class ContactSupportScreen extends StatelessWidget {
                 Text(
                   'Tap the email above to open your mail app.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
                 const SizedBox(height: 24),
                 SizedBox(

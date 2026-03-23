@@ -174,7 +174,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
   Timer? _searchDebounce;
 
   int _stationTapCount = 0;
-  String? _currentMediaId;
+  final ValueNotifier<String?> _currentMediaIdVN = ValueNotifier<String?>(null);
 
   // ── Core data ─────────────────────────────────────────────────────────────
   // _allStations: the full cumulative station list, updated per page.
@@ -196,15 +196,8 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
   final _AdInjectState _injectState = _AdInjectState();
 
   // _adPlacement: resolved from AdConfigProvider once the provider is ready.
-  //   Null until the provider is initialised (first few pages may arrive before
-  //   the provider is ready — _placementWasResolved tracks whether we had a
-  //   valid placement during the streaming phase).
+  //   Null until the provider is initialised.
   InListPlacement? _adPlacement;
-
-  // _placementWasResolved: true if _adPlacement was successfully read from the
-  //   provider during _onStationsUpdated. If still false when _onLoadComplete
-  //   fires, we rebuild _mixedItems from scratch with the now-known placement.
-  bool _placementWasResolved = false;
 
   // _adsInjected: true after _onLoadComplete fires — guards against
   //   overwriting the finalised list if stationsNotifier fires again.
@@ -226,6 +219,10 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
   StreamSubscription<MediaItem?>? _mediaItemSub;
   late final VoidCallback _loadCompleteListener;
   late final VoidCallback _stationsListener;
+  /// Re-runs [_onLoadComplete] when [AdConfigProvider] finishes after deferred startup
+  /// so banners / in-feed ads appear (stations often load before analytics HTTP returns).
+  late final VoidCallback _adConfigListener;
+  Timer? _stationsUiDebounce;
 
   static const List<String> _languageFilters = [
     'All',
@@ -271,16 +268,30 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
     // Track now-playing for the NOW PLAYING badge — this setState is safe
     // because it only updates a String?, not list structure.
     _mediaItemSub = globalRadioAudioHandler.mediaItem.listen((item) {
-      if (mounted) setState(() => _currentMediaId = item?.id);
+      _currentMediaIdVN.value = item?.id;
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    _adConfigListener = () {
       if (!mounted) return;
-      final adConfig = context.read<AdConfigProvider>();
-      if (adConfig.isInterstitialEnabled(AdScreen.radio)) {
-        InterstitialAdManager.preload();
-      }
+      if (!adConfigProvider.initialized) return;
+      if (!stationsLoadingComplete.value) return;
+      if (stationsNotifier.value.isEmpty) return;
+      _onLoadComplete();
+      _maybePreloadRadioInterstitial();
+    };
+    adConfigProvider.addListener(_adConfigListener);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybePreloadRadioInterstitial();
     });
+  }
+
+  void _maybePreloadRadioInterstitial() {
+    if (!mounted) return;
+    final adConfig = context.read<AdConfigProvider>();
+    if (adConfig.isInterstitialEnabled(AdScreen.radio)) {
+      InterstitialAdManager.preload();
+    }
   }
 
   @override
@@ -302,57 +313,35 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
   /// Called on every stationsNotifier change (one new page has arrived).
   ///
   /// [stationsNotifier.value] is the CUMULATIVE list (all pages so far).
-  /// We compute the NEW stations = everything beyond what we already rendered,
-  /// run incremental ad injection only on those new stations, then APPEND
-  /// the result to _mixedItems.  This is O(page-size) not O(total) and keeps
-  /// ad slot positions globally correct across page boundaries.
+  /// We update visible stations progressively, but defer in-feed ad injection
+  /// until [_onLoadComplete] so ad widgets are not churned while pages stream in.
+  /// This keeps ad slots stable and avoids "Ad ... could not be found/disposed"
+  /// errors seen during initial launch.
   void _onStationsUpdated() {
     if (!mounted) return;
     final all = stationsNotifier.value;
     if (all.isEmpty) return;
     if (_adsInjected) return; // final pass already done; don't overwrite
-
-    // Determine which stations are new this call.
-    final alreadyRendered = _allStations.length;
-    if (all.length <= alreadyRendered) return; // nothing new
-
-    final newStations = all.sublist(alreadyRendered);
-
-    // Try to resolve placement if not yet done.
-    // If the provider isn't ready yet, we fall back to disabled and mark
-    // _placementWasResolved = false so _onLoadComplete knows to rebuild.
-    if (!_placementWasResolved) {
-      final resolved = _resolvePlacement();
-      if (resolved != null) {
-        _adPlacement = resolved;
-        _placementWasResolved = true;
-      }
+    // First page should appear immediately; subsequent page bursts are batched.
+    if (!_isLoaded) {
+      _applyStationsSnapshot(all);
+      return;
     }
-
-    final newItems = _injectAdsIncremental(
-      newStations,
-      _adPlacement ?? InListPlacement.disabled,
-      _injectState,
-    );
-
-    setState(() {
-      _allStations = List.unmodifiable(all);
-      _mixedItems = [..._mixedItems, ...newItems];
-      _isLoaded = true;
-      _cachedFilteredItems = null; // invalidate filter cache
+    _stationsUiDebounce?.cancel();
+    _stationsUiDebounce = Timer(const Duration(milliseconds: 120), () {
+      if (!mounted || _adsInjected) return;
+      _applyStationsSnapshot(stationsNotifier.value);
     });
   }
 
-  /// Lazily reads InListPlacement from AdConfigProvider.
-  /// Returns null if the provider is not yet initialised.
-  InListPlacement? _resolvePlacement() {
-    try {
-      final adConfig = context.read<AdConfigProvider>();
-      if (!adConfig.initialized) return null;
-      return adConfig.stationsListPlacement(AdScreen.radio);
-    } catch (_) {
-      return null;
-    }
+  void _applyStationsSnapshot(List<RadioStation> all) {
+    if (!mounted) return;
+    setState(() {
+      _allStations = List.unmodifiable(all);
+      _mixedItems = [for (final s in all) _StationItem(s)];
+      _isLoaded = true;
+      _cachedFilteredItems = null; // invalidate filter cache
+    });
   }
 
   /// Called exactly once when stationsLoadingComplete becomes true.
@@ -365,35 +354,15 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
   void _onLoadComplete() {
     if (!stationsLoadingComplete.value) return;
     if (!mounted) return;
+    _stationsUiDebounce?.cancel();
 
     final adConfig = context.read<AdConfigProvider>();
     final all = List<RadioStation>.unmodifiable(stationsNotifier.value);
     final placement = adConfig.stationsListPlacement(AdScreen.radio);
+    _adPlacement = placement;
 
-    List<_ListItem> finalMixed;
-
-    if (!_placementWasResolved) {
-      // The streaming phase ran before AdConfigProvider was ready, so every
-      // page was processed with InListPlacement.disabled — no ads were inserted.
-      // Rebuild the entire mixed list from scratch now that we have placement.
-      _injectState.reset();
-      finalMixed = _injectAdsIncremental(all.toList(), placement, _injectState);
-    } else {
-      // Streaming phase had valid placement. Only handle any tail stations
-      // not yet covered by _onStationsUpdated (rare edge case).
-      _adPlacement = placement;
-      final alreadyRendered = _allStations.length;
-      if (all.length > alreadyRendered) {
-        final tailItems = _injectAdsIncremental(
-          all.sublist(alreadyRendered),
-          placement,
-          _injectState,
-        );
-        finalMixed = [..._mixedItems, ...tailItems];
-      } else {
-        finalMixed = _mixedItems;
-      }
-    }
+    _injectState.reset();
+    final finalMixed = _injectAdsIncremental(all.toList(), placement, _injectState);
 
     // Build "For You" from a random sample of stations and "Trending"
     // from a different sample so they feel distinct and meaningful.
@@ -427,9 +396,12 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
 
   @override
   void dispose() {
+    _stationsUiDebounce?.cancel();
+    adConfigProvider.removeListener(_adConfigListener);
     stationsNotifier.removeListener(_stationsListener);
     stationsLoadingComplete.removeListener(_loadCompleteListener);
     _mediaItemSub?.cancel();
+    _currentMediaIdVN.dispose();
     _searchDebounce?.cancel();
     _searchController.dispose();
     _scrollController.removeListener(_onScroll);
@@ -574,12 +546,12 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
       _allStations = [];
       _mixedItems = [];
       _adPlacement = null;
-      _placementWasResolved = false;
       _cachedFilteredItems = null;
       _injectState.reset();
     });
     try {
-      await syncRemoteStations();
+      await adConfigProvider.refresh(isPremiumUser: isPremiumUser.value);
+      await syncRemoteStations(forceRefresh: true);
       // syncRemoteStations fires page 1 immediately via stationsNotifier,
       // then _loadRemainingStationsInBackground fires subsequent pages.
       // Each fire triggers _onStationsUpdated; final fire triggers _onLoadComplete.
@@ -627,6 +599,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
         .toList();
 
     return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
           RefreshIndicator(
@@ -638,7 +611,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
               controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
-                _buildSliverAppBar(isDark),
+                _buildSliverAppBar(),
 
                 // Single body sliver — always SliverToBoxAdapter, always present.
                 SliverToBoxAdapter(
@@ -652,10 +625,10 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                             // Search
                             Padding(
                               padding: const EdgeInsets.fromLTRB(16, 10, 16, 4),
-                              child: _buildSearchBar(isDark),
+                              child: _buildSearchBar(),
                             ),
                             // Language chips
-                            _buildLanguageChips(isDark),
+                            _buildLanguageChips(),
                             // Favourites — stable Visibility to avoid tree structure changes
                             Visibility(
                               visible: favourites.isNotEmpty,
@@ -669,10 +642,16 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                                       favourites,
                                     ),
                                   ),
-                                  HorizontalStationList(
-                                    stations: favourites,
-                                    currentMediaId: _currentMediaId,
-                                    onPlay: _playStation,
+                                  ValueListenableBuilder<String?>(
+                                    valueListenable: _currentMediaIdVN,
+                                    builder: (context, currentId, _) {
+                                      return HorizontalStationList(
+                                        stations: favourites,
+                                        currentMediaId: currentId,
+                                        onPlay: _playStation,
+                                        onRemoveFavourite: _toggleFavourite,
+                                      );
+                                    },
                                   ),
                                 ],
                               ),
@@ -685,11 +664,19 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                                 _forYouStations,
                               ),
                             ),
-                            HorizontalStationList(
-                              stations: _forYouStations,
-                              currentMediaId: _currentMediaId,
-                              onPlay: _playStation,
-                            ),
+                            if (_forYouStations.isNotEmpty)
+                              ValueListenableBuilder<String?>(
+                                valueListenable: _currentMediaIdVN,
+                                builder: (context, currentId, _) {
+                                  return HorizontalStationList(
+                                    stations: _forYouStations,
+                                    currentMediaId: currentId,
+                                    onPlay: _playStation,
+                                  );
+                                },
+                              )
+                            else
+                              _buildShimmerCarousel(isDark),
                             // Trending
                             SectionHeader(
                               title: 'Trending Now',
@@ -698,11 +685,19 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                                 _trendingStations,
                               ),
                             ),
-                            HorizontalStationList(
-                              stations: _trendingStations,
-                              currentMediaId: _currentMediaId,
-                              onPlay: _playStation,
-                            ),
+                            if (_trendingStations.isNotEmpty)
+                              ValueListenableBuilder<String?>(
+                                valueListenable: _currentMediaIdVN,
+                                builder: (context, currentId, _) {
+                                  return HorizontalStationList(
+                                    stations: _trendingStations,
+                                    currentMediaId: currentId,
+                                    onPlay: _playStation,
+                                  );
+                                },
+                              )
+                            else
+                              _buildShimmerCarousel(isDark),
                             // All Stations — tighter bottom padding so the vertical
                             // list sits closer to the title (matches carousel density).
                             SectionHeader(
@@ -742,10 +737,16 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                                         );
                                       }
                                       final s = (item as _StationItem).station;
-                                      return _buildVerticalTile(
-                                        s,
-                                        tileKey: ValueKey('station_${s.id}'),
-                                        tightenTop: firstRow,
+                                      return ValueListenableBuilder<String?>(
+                                        valueListenable: _currentMediaIdVN,
+                                        builder: (context, currentId, _) {
+                                          return _buildVerticalTile(
+                                            s,
+                                            currentMediaId: currentId,
+                                            tileKey: ValueKey('station_${s.id}'),
+                                            tightenTop: firstRow,
+                                          );
+                                        },
                                       );
                                     },
                                   ),
@@ -796,7 +797,8 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
   //  Widget helpers
   // ─────────────────────────────────────────────────────────────────────────
 
-  Widget _buildLanguageChips(bool isDark) {
+  Widget _buildLanguageChips() {
+    final cs = Theme.of(context).colorScheme;
     return SizedBox(
       height: 48,
       child: ListView.builder(
@@ -827,20 +829,18 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                 decoration: BoxDecoration(
                   color: isSelected
                       ? const Color(0xFF7C4DFF)
-                      : (isDark
-                            ? Colors.white.withOpacity(0.08)
-                            : Colors.grey.shade100),
+                      : cs.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: isSelected
                         ? const Color(0xFF7C4DFF)
-                        : Colors.transparent,
+                        : cs.outline.withValues(alpha: 0.25),
                     width: 1.5,
                   ),
                   boxShadow: isSelected
                       ? [
                           BoxShadow(
-                            color: const Color(0xFF7C4DFF).withOpacity(0.3),
+                            color: const Color(0xFF7C4DFF).withValues(alpha: 0.3),
                             blurRadius: 6,
                             offset: const Offset(0, 2),
                           ),
@@ -859,7 +859,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                             : FontWeight.normal,
                         color: isSelected
                             ? Colors.white
-                            : (isDark ? Colors.grey[300] : Colors.grey[700]),
+                            : cs.onSurfaceVariant,
                       ),
                     ),
                     if (isSelected && lang != 'All') ...[
@@ -876,7 +876,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                           width: 16,
                           height: 16,
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.3),
+                            color: Colors.white.withValues(alpha: 0.3),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
@@ -898,6 +898,8 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
   }
 
   Widget _buildEmptyState() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 60),
       child: Column(
@@ -906,7 +908,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
           Icon(
             Icons.radio_outlined,
             size: 64,
-            color: const Color(0xFF7C4DFF).withOpacity(0.3),
+            color: cs.primary.withValues(alpha: 0.35),
           ),
           const SizedBox(height: 16),
           Text(
@@ -914,13 +916,13 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                 ? 'No stations match "$_searchQuery"'
                 : 'No $_selectedLanguage stations found',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            style: tt.titleMedium?.copyWith(color: cs.onSurface),
           ),
           const SizedBox(height: 8),
           Text(
             'Try a different search or language filter',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: Colors.grey[500]),
+            style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
           ),
           const SizedBox(height: 20),
           OutlinedButton.icon(
@@ -947,15 +949,25 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
     );
   }
 
-  Widget _buildSliverAppBar(bool isDark) {
+  Widget _buildSliverAppBar() {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final mq = MediaQuery.of(context);
+    final wideLandscape =
+        mq.orientation == Orientation.landscape && mq.size.width >= 600;
+    final titlePadBottom = wideLandscape ? 8.0 : 16.0;
+    final discoverSize = wideLandscape ? 20.0 : 24.0;
     return SliverAppBar(
-      expandedHeight: 130,
+      toolbarHeight: wideLandscape ? 48 : kToolbarHeight,
+      expandedHeight: wideLandscape ? 86 : 130,
       pinned: true,
       elevation: 0,
-      backgroundColor: isDark ? const Color(0xFF0D0D0D) : Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      backgroundColor: cs.surface,
       flexibleSpace: FlexibleSpaceBar(
         centerTitle: false,
-        titlePadding: const EdgeInsets.only(left: 16, bottom: 16),
+        titlePadding: EdgeInsets.only(left: 16, bottom: titlePadBottom),
         background: isDark
             ? Container(
                 decoration: const BoxDecoration(
@@ -982,11 +994,11 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
             children: [
               Text(
                 'Discover',
-                style: TextStyle(
-                  color: isDark ? Colors.white : Colors.black,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 24,
-                ),
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontFamily: 'Outfit',
+                      color: cs.onSurface,
+                      fontSize: discoverSize,
+                    ),
               ),
               const SizedBox(width: 8),
               Container(
@@ -1000,9 +1012,10 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                 child: const Text(
                   'LIVE',
                   style: TextStyle(
+                    fontFamily: 'Outfit',
                     color: Colors.white,
                     fontSize: 10,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w700,
                     letterSpacing: 1,
                   ),
                 ),
@@ -1047,17 +1060,19 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
     );
   }
 
-  Widget _buildSearchBar(bool isDark) {
+  Widget _buildSearchBar() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.08) : Colors.grey.shade100,
+        color: cs.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: _searchQuery.isNotEmpty
-              ? const Color(0xFF7C4DFF).withOpacity(0.5)
-              : Colors.transparent,
+              ? cs.primary.withValues(alpha: 0.45)
+              : cs.outline.withValues(alpha: 0.3),
           width: 1.5,
         ),
       ),
@@ -1076,20 +1091,24 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
             }
           });
         },
-        style: TextStyle(color: isDark ? Colors.white : Colors.black),
+        style: tt.bodyLarge?.copyWith(color: cs.onSurface),
         decoration: InputDecoration(
           icon: Icon(
             Icons.search,
             color: _searchQuery.isNotEmpty
-                ? const Color(0xFF7C4DFF)
-                : Colors.grey[500],
+                ? cs.primary
+                : cs.onSurfaceVariant,
           ),
           hintText: 'Search stations...',
-          hintStyle: TextStyle(color: Colors.grey[500]),
+          hintStyle: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
           border: InputBorder.none,
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
-                  icon: Icon(Icons.close, color: Colors.grey[500], size: 18),
+                  icon: Icon(
+                    Icons.close,
+                    color: cs.onSurfaceVariant,
+                    size: 18,
+                  ),
                   onPressed: () {
                     _searchDebounce?.cancel();
                     _searchController.clear();
@@ -1181,12 +1200,14 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
 
   Widget _buildVerticalTile(
     RadioStation station, {
+    required String? currentMediaId,
     Key? tileKey,
     bool tightenTop = false,
   }) {
-    final isPlaying = station.id == _currentMediaId;
+    final isPlaying = station.id == currentMediaId;
     final isFav = _favouriteIds.contains(station.id);
     final isDark = _isDark;
+    final cs = Theme.of(context).colorScheme;
 
     return AnimatedContainer(
       key: tileKey,
@@ -1212,8 +1233,11 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
         title: Text(
           station.name,
           style: TextStyle(
-            fontWeight: isPlaying ? FontWeight.bold : FontWeight.w500,
-            color: isPlaying ? const Color(0xFF7C4DFF) : null,
+            fontFamily: 'Outfit',
+            fontWeight: isPlaying ? FontWeight.w700 : FontWeight.w600,
+            color: isPlaying
+                ? const Color(0xFF7C4DFF)
+                : Theme.of(context).colorScheme.onSurface,
           ),
         ),
         subtitle: Row(
@@ -1224,10 +1248,9 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                 station.language ?? 'Global',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? Colors.grey[400] : Colors.grey[600],
-                ),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
               ),
             ),
           ],
@@ -1240,7 +1263,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
             InkWell(
               onTap: () => _toggleFavourite(station),
               borderRadius: BorderRadius.circular(20),
-              splashColor: Colors.red.withOpacity(0.15),
+              splashColor: Colors.red.withValues(alpha: 0.15),
               child: Padding(
                 padding: const EdgeInsets.all(6),
                 child: AnimatedSwitcher(
@@ -1250,7 +1273,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                   child: Icon(
                     isFav ? Icons.favorite : Icons.favorite_border,
                     key: ValueKey(isFav),
-                    color: isFav ? Colors.red : Colors.grey[400],
+                    color: isFav ? Colors.red : cs.onSurfaceVariant,
                     size: 20,
                   ),
                 ),
@@ -1259,10 +1282,38 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
             const SizedBox(width: 4),
             isPlaying
                 ? EqualizerIcon(isDark: isDark, size: 40, isPlaying: true)
-                : Icon(Icons.play_arrow_rounded, color: Colors.grey[400]),
+                : Icon(
+                    Icons.play_arrow_rounded,
+                    color: cs.onSurfaceVariant,
+                  ),
           ],
         ),
         onTap: () => _playStation(station),
+      ),
+    );
+  }
+
+  Widget _buildShimmerCarousel(bool isDark) {
+    return SizedBox(
+      height: 190,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(right: 16),
+        itemCount: 4,
+        itemBuilder: (context, index) {
+          return Padding(
+            padding: const EdgeInsets.only(left: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _ShimmerBox(width: 140, height: 140, radius: 20, isDark: isDark),
+                const SizedBox(height: 8),
+                _ShimmerBox(width: 100, height: 16, radius: 4, isDark: isDark),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -1474,7 +1525,9 @@ class _ShimmerBoxState extends State<_ShimmerBox>
     final base = widget.isDark
         ? const Color(0xFF1E1E2E)
         : const Color(0xFFE8E8F0);
-    final highlight = widget.isDark ? const Color(0xFF2E2E3E) : Colors.white;
+    // Avoid pure white in dark mode — it flashed as a bright strip during shimmer.
+    final highlight =
+        widget.isDark ? const Color(0xFF2E2E3E) : Colors.white;
     return AnimatedBuilder(
       animation: _anim,
       builder: (_, __) => Container(

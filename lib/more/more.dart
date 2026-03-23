@@ -1,29 +1,41 @@
-// 💡 NEW: More Screen - Default Page
 import 'package:flutter/material.dart';
 import 'package:grradio/Env.dart';
 import 'package:grradio/more/about_screen.dart';
 import 'package:grradio/more/helpandsupport.dart';
 import 'package:grradio/more/notification_settings_screen.dart';
 import 'package:grradio/more/theme_provider.dart';
+import 'package:grradio/main.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:provider/provider.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
 class MoreScreen extends StatelessWidget {
-  const MoreScreen({Key? key}) : super(key: key);
+  const MoreScreen({super.key});
 
   static final InAppReview _inAppReview = InAppReview.instance;
 
-  Future<void> _shareApp() async {
+  Future<void> _shareApp(BuildContext context) async {
     const String message =
         'Hey! Check out ${Env.appName} for high-quality radio streaming and premium features. Download it here: ${Env.playStoreUrl}';
-    await SharePlus.instance.share(
-      ShareParams(text: message, subject: 'Check out ${Env.appName}'),
-    );
+    try {
+      await SharePlus.instance.share(
+        ShareParams(text: message, subject: 'Check out ${Env.appName}'),
+      );
+    } catch (e) {
+      debugPrint('Share failed: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not share: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
   }
 
-  Future<void> _rateApp() async {
+  Future<void> _rateApp(BuildContext context) async {
     try {
       if (await _inAppReview.isAvailable()) {
         await _inAppReview.requestReview();
@@ -35,42 +47,25 @@ class MoreScreen extends StatelessWidget {
       }
     } catch (e) {
       debugPrint('Error launching review: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open rating: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = context.watch<ThemeProvider>();
-    final isDark = themeProvider.isDarkMode;
+    final isDark = context.watch<ThemeProvider>().isDarkMode;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text(
-          'More',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-        ),
-        flexibleSpace: isDark
-            ? Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF1A0A3E), Color(0xFF0D0D0D)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-              )
-            : Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-              ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        title: const Text('More'),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -117,27 +112,23 @@ class MoreScreen extends StatelessWidget {
                     const SizedBox(height: 16),
                     Text(
                       Env.appName,
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : Colors.black87,
-                      ),
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'v${Env.appVersion}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isDark ? Colors.grey[400] : Colors.grey[500],
-                      ),
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'Your Ultimate Music Companion',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDark ? Colors.grey[400] : Colors.grey[500],
-                      ),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -148,29 +139,24 @@ class MoreScreen extends StatelessWidget {
             const SizedBox(height: 24),
 
             // ── Settings Section ───────────────────────────────────────────
-            _buildSectionLabel('Settings', isDark),
+            _buildSectionLabel(context, 'Settings'),
             const SizedBox(height: 12),
 
             _buildSettingsItem(
+              context,
               icon: Icons.star_rounded,
               title: 'Go Premium (Ad-Free)',
               subtitle: 'Unlock all features with a subscription',
               iconColor: Colors.amber.shade700,
-              isDark: isDark,
-              onTap: () async {
-                final paywallResult = await RevenueCatUI.presentPaywall();
-                if (paywallResult == PaywallResult.purchased) {
-                  debugPrint('Purchase successful!');
-                }
-              },
+              onTap: () => _openPremiumPaywall(context),
             ),
 
             _buildSettingsItem(
+              context,
               icon: Icons.notifications_rounded,
               title: 'Notifications',
               subtitle: 'Manage your notification preferences',
-              iconColor: const Color(0xFF7C4DFF),
-              isDark: isDark,
+              iconColor: Theme.of(context).colorScheme.primary,
               onTap: () {
                 Navigator.push(
                   context,
@@ -182,20 +168,20 @@ class MoreScreen extends StatelessWidget {
             ),
 
             // Dark mode tile — uses a Switch as trailing to show current state
-            _buildDarkModeTile(context, themeProvider, isDark),
+            _buildDarkModeTile(context, isDark),
 
             const SizedBox(height: 24),
 
             // ── Support Section ────────────────────────────────────────────
-            _buildSectionLabel('Support', isDark),
+            _buildSectionLabel(context, 'Support'),
             const SizedBox(height: 12),
 
             _buildSettingsItem(
+              context,
               icon: Icons.help_outline_rounded,
               title: 'Help & Support',
               subtitle: 'Get help and contact support',
-              iconColor: const Color(0xFF7C4DFF),
-              isDark: isDark,
+              iconColor: Theme.of(context).colorScheme.primary,
               onTap: () {
                 Navigator.push(
                   context,
@@ -205,29 +191,29 @@ class MoreScreen extends StatelessWidget {
             ),
 
             _buildSettingsItem(
+              context,
               icon: Icons.star_rate_rounded,
               title: 'Rate App',
               subtitle: 'Share your feedback with us',
               iconColor: Colors.orange.shade700,
-              isDark: isDark,
-              onTap: _rateApp,
+              onTap: () => _rateApp(context),
             ),
 
             _buildSettingsItem(
+              context,
               icon: Icons.share_rounded,
               title: 'Share App',
               subtitle: 'Share with your friends',
-              iconColor: const Color(0xFF448AFF),
-              isDark: isDark,
-              onTap: _shareApp,
+              iconColor: Theme.of(context).colorScheme.secondary,
+              onTap: () => _shareApp(context),
             ),
 
             _buildSettingsItem(
+              context,
               icon: Icons.info_outline_rounded,
               title: 'About',
               subtitle: 'App version and information',
               iconColor: Colors.teal.shade600,
-              isDark: isDark,
               onTap: () {
                 Navigator.push(
                   context,
@@ -241,11 +227,13 @@ class MoreScreen extends StatelessWidget {
             // ── Footer ────────────────────────────────────────────────────
             Center(
               child: Text(
-                '© 2025 ${Env.appName}. All Rights Reserved.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark ? Colors.grey[600] : Colors.grey[400],
-                ),
+                '© ${DateTime.now().year} ${Env.appName}. All Rights Reserved.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withValues(alpha: 0.75),
+                    ),
               ),
             ),
             const SizedBox(height: 8),
@@ -255,25 +243,60 @@ class MoreScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildSectionLabel(String label, bool isDark) {
-    return Text(
-      label,
-      style: TextStyle(
-        fontSize: 13,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1.1,
-        color: isDark ? Colors.grey[400] : Colors.grey[600],
+  Widget _buildSectionLabel(BuildContext context, String label) {
+    return Semantics(
+      header: true,
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              letterSpacing: 1.1,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
       ),
     );
   }
 
+  Future<void> _openPremiumPaywall(BuildContext context) async {
+    try {
+      final paywallResult = await RevenueCatUI.presentPaywall();
+      await updatePremiumStatus();
+      if (!context.mounted) return;
+      if (paywallResult == PaywallResult.purchased ||
+          paywallResult == PaywallResult.restored) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Thank you — Premium is active.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else if (paywallResult == PaywallResult.notPresented) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No subscription package is currently available.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Paywall error: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open subscriptions: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   /// Standard settings row — distinct icon color per item, clean trailing arrow.
-  Widget _buildSettingsItem({
+  Widget _buildSettingsItem(
+    BuildContext context, {
     required IconData icon,
     required String title,
     required String subtitle,
     required Color iconColor,
-    required bool isDark,
     required VoidCallback onTap,
   }) {
     return Card(
@@ -286,26 +309,25 @@ class MoreScreen extends StatelessWidget {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: iconColor.withOpacity(0.12),
+            color: iconColor.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(icon, color: iconColor, size: 20),
         ),
         title: Text(
           title,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+          style: Theme.of(context).textTheme.titleMedium,
         ),
         subtitle: Text(
           subtitle,
-          style: TextStyle(
-            fontSize: 12,
-            color: isDark ? Colors.grey[500] : Colors.grey[600],
-          ),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
         ),
         trailing: Icon(
           Icons.arrow_forward_ios_rounded,
           size: 15,
-          color: isDark ? Colors.grey[600] : Colors.grey[400],
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         onTap: onTap,
       ),
@@ -315,12 +337,13 @@ class MoreScreen extends StatelessWidget {
   /// Dark mode tile with a Switch trailing indicator showing current state.
   Widget _buildDarkModeTile(
     BuildContext context,
-    ThemeProvider themeProvider,
     bool isDark,
   ) {
+    final cs = Theme.of(context).colorScheme;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       elevation: 2,
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -328,29 +351,37 @@ class MoreScreen extends StatelessWidget {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: const Color(0xFF7C4DFF).withOpacity(0.12),
+            color: cs.primary.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(
             isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-            color: const Color(0xFF7C4DFF),
+            color: cs.primary,
             size: 20,
           ),
         ),
-        title: const Text(
+        title: Text(
           'Dark Mode',
-          style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+          style: Theme.of(context).textTheme.titleMedium,
         ),
         subtitle: Text(
           isDark ? 'Dark theme is on' : 'Light theme is on',
-          style: TextStyle(
-            fontSize: 12,
-            color: isDark ? Colors.grey[500] : Colors.grey[600],
-          ),
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
         ),
         trailing: Switch(
           value: isDark,
-          activeThumbColor: const Color(0xFF7C4DFF),
+          thumbColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) return cs.primary;
+            return null;
+          }),
+          trackColor: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return cs.primary.withValues(alpha: 0.35);
+            }
+            return null;
+          }),
           onChanged: (_) {
             context.read<ThemeProvider>().toggleTheme();
           },

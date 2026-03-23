@@ -90,10 +90,8 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
         child: AdWidget(ad: _bannerAd!),
       );
     }
-    // Return a small placeholder or SizedBox when the ad is not loaded
-    return const SizedBox(
-      height: 50, // Must match the standard banner height
-      child: Center(child: Text('Ad Loading/Placeholder')),
-    );
+    // Lightweight: hide banner entirely until it's loaded.
+    // This avoids "skeleton" placeholders during SDK/config initialization.
+    return const SizedBox.shrink();
   }
 }

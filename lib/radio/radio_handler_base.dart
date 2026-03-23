@@ -10,4 +10,7 @@ abstract class RadioHandlerBase {
   bool get isRecording;
   Future<void> toggleShuffle();
   Future<void> cycleRepeatMode();
+  Future<void> setSleepTimer(Duration duration);
+  Future<void> cancelSleepTimer();
+  Duration? getSleepTimerRemaining();
 }

@@ -62,23 +62,8 @@ class _NotificationSettingsScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Notifications',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
+        title: const Text('Notifications'),
         centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.white),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -95,12 +80,15 @@ class _NotificationSettingsScreenState
                   horizontal: 16,
                   vertical: 4,
                 ),
-                title: const Text(
+                title: Text(
                   'Push Notifications',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                  style: Theme.of(context).textTheme.titleMedium,
                 ),
-                subtitle: const Text(
+                subtitle: Text(
                   'Receive alerts about new stations and shows',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                 ),
                 secondary: _isSaving
                     ? const SizedBox(
@@ -117,7 +105,7 @@ class _NotificationSettingsScreenState
                             : Icons.notifications_off_rounded,
                         color: _notificationsEnabled
                             ? const Color(0xFF7C4DFF)
-                            : Colors.grey,
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                 value: _notificationsEnabled,
                 activeThumbColor: const Color(0xFF7C4DFF),
@@ -128,7 +116,9 @@ class _NotificationSettingsScreenState
             Text(
               'Turning off notifications will stop all alerts from being sent to this device.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             ),
           ],
         ),

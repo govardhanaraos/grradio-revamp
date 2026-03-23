@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:grradio/Env.dart';
 import 'package:grradio/ads/ad_config_provider.dart'; // single source of truth for ScreenAdConfig
 import 'package:http/http.dart' as http;
@@ -15,19 +17,50 @@ import 'package:http/http.dart' as http;
 final String _baseUrl = Env.apiBaseUrl;
 const String _analyticsEndpoint = '/analytics';
 
+/// Retries transient TLS/HTTP failures (e.g. "Connection closed before full header",
+/// broken pipe) common on cold Render.com connections.
+Future<http.Response> _getWithRetry(Uri uri) async {
+  const maxAttempts = 3;
+  Object? lastErr;
+  for (var attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await http.get(uri).timeout(Duration(seconds: 12 + attempt * 6));
+    } catch (e) {
+      lastErr = e;
+      if (attempt < maxAttempts - 1) {
+        await Future<void>.delayed(
+          Duration(milliseconds: 350 * (1 << attempt)),
+        );
+      }
+    }
+  }
+  throw lastErr ?? Exception('GET failed after $maxAttempts attempts');
+}
+
+bool _coerceAdsEnabledFlag(dynamic raw) {
+  if (raw == null) return false;
+  if (raw is bool) return raw;
+  if (raw is num) return raw != 0;
+  if (raw is String) {
+    final s = raw.toLowerCase().trim();
+    return s == 'true' || s == '1' || s == 'yes';
+  }
+  return false;
+}
+
 class AnalyticsServiceAPI {
   // ── Global master switch ───────────────────────────────────────────────────
   // GET /analytics/config/global  →  { "ads_enabled": true }
   Future<bool> fetchGlobalAdsEnabled() async {
     final uri = Uri.parse('$_baseUrl$_analyticsEndpoint/config/global');
     try {
-      final response = await http.get(uri);
+      final response = await _getWithRetry(uri);
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
-        return data['ads_enabled'] as bool? ?? false;
+        return _coerceAdsEnabledFlag(data['ads_enabled']);
       }
     } catch (e) {
-      print('Error fetching global ads config: $e');
+      debugPrint('Error fetching global ads config: $e');
     }
     return false;
   }
@@ -49,18 +82,23 @@ class AnalyticsServiceAPI {
   //   "downloads_list":  { "enabled": false, "every_n_items": 6, "first_ad_position": 0, "max_ads": 0  },
   //   "recordings_list": { "enabled": false, "every_n_items": 6, "first_ad_position": 0, "max_ads": 0  }
   // }
-  Future<ScreenAdConfig> fetchScreenAdConfig(String screen) async {
+  /// [fetchedOk] is false when the HTTP request failed or returned non-200.
+  /// Callers should fall back to [ScreenAdConfig.fallbackWhenGlobalAdsOn] when
+  /// the global master switch is on but per-screen config could not be loaded.
+  Future<({ScreenAdConfig config, bool fetchedOk})> fetchScreenAdConfig(
+    String screen,
+  ) async {
     final uri = Uri.parse('$_baseUrl$_analyticsEndpoint/ads/$screen');
     try {
-      final response = await http.get(uri);
+      final response = await _getWithRetry(uri);
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;
-        return ScreenAdConfig.fromJson(data);
+        return (config: ScreenAdConfig.fromJson(data), fetchedOk: true);
       }
     } catch (e) {
-      print('Error fetching ads config for $screen: $e');
+      debugPrint('Error fetching ads config for $screen: $e');
     }
-    return ScreenAdConfig.disabled;
+    return (config: ScreenAdConfig.disabled, fetchedOk: false);
   }
 
   // ── Device Registration ────────────────────────────────────────────────────

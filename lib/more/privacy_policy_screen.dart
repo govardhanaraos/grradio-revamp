@@ -7,41 +7,26 @@ class PrivacyPolicyScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Privacy Policy',
-          style: TextStyle(color: Colors.white),
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
+        title: const Text('Privacy Policy'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildSectionTitle('1. Introduction'),
+            _buildSectionTitle(context, '1. Introduction'),
             _buildSectionContent(context, 
               'Welcome to GR Radio. We are committed to protecting your personal information and your right to privacy. This policy explains how we collect, use, and safeguard your data when you use our mobile application.',
             ),
 
-            _buildSectionTitle('2. Information We Collect'),
+            _buildSectionTitle(context, '2. Information We Collect'),
             _buildSectionContent(context, 
               '• Device Information: We collect unique device identifiers (Device IDs) to manage premium subscriptions and device limits.\n'
               '• Usage Data: We collect information about which stations you listen to and app interactions to improve our service.\n'
               '• Log Data: Our servers automatically record information created by your use of the services.',
             ),
 
-            _buildSectionTitle('3. How We Use Information'),
+            _buildSectionTitle(context, '3. How We Use Information'),
             _buildSectionContent(context, 
               'We use the information we collect to:\n'
               '• Provide and maintain our Radio services.\n'
@@ -50,7 +35,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
               '• Monitor and analyze usage and trends.',
             ),
 
-            _buildSectionTitle('4. Third-Party Services'),
+            _buildSectionTitle(context, '4. Third-Party Services'),
             _buildSectionContent(context, 
               'Our app uses third-party services that may collect information used to identify you:\n'
               '• Google Mobile Ads (AdMob)\n'
@@ -58,23 +43,23 @@ class PrivacyPolicyScreen extends StatelessWidget {
               '• Radio Station Streaming Providers',
             ),
 
-            _buildSectionTitle('5. Security'),
+            _buildSectionTitle(context, '5. Security'),
             _buildSectionContent(context, 
               'We value your trust in providing us your Personal Information, thus we are striving to use commercially acceptable means of protecting it. However, no method of transmission over the internet is 100% secure.',
             ),
 
-            _buildSectionTitle('6. Contact Us'),
+            _buildSectionTitle(context, '6. Contact Us'),
             _buildSectionContent(context, 
               'If you have any questions or suggestions about our Privacy Policy, do not hesitate to contact us at support@grradio.com.',
             ),
 
             const SizedBox(height: 30),
-            const Center(
+            Center(
               child: Text(
                 'Last updated: December 2024',
-                style: TextStyle(
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   fontStyle: FontStyle.italic,
-                  color: Colors.grey,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),
             ),
@@ -85,15 +70,13 @@ class PrivacyPolicyScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildSectionTitle(String title) {
+  Widget _buildSectionTitle(BuildContext context, String title) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Text(
         title,
-        style: const TextStyle(
-          fontSize: 18,
-          fontWeight: FontWeight.bold,
-          color: Color(0xFF7C4DFF),
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          color: const Color(0xFF7C4DFF),
         ),
       ),
     );
@@ -102,8 +85,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
   Widget _buildSectionContent(BuildContext context, String content) {
     return Text(
       content,
-      style: TextStyle(
-        fontSize: 15,
+      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
         height: 1.6,
         color: Theme.of(context).textTheme.bodyMedium?.color,
       ),

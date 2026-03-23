@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' show Random;
 
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
@@ -62,6 +63,10 @@ class RadioHandlerImpl extends BaseAudioHandler
   // independent of the radio station list.
   List<Map<String, String>> _localQueue = []; // [{path, title}, ...]
   int _localQueueIndex = -1;
+  bool _handlingLocalCompletion = false;
+  Timer? _sleepTimer;
+  Timer? _sleepTicker;
+  DateTime? _sleepEndsAt;
 
   RadioHandlerImpl({required List<RadioStation> stations})
     : _radioStations = stations {
@@ -74,7 +79,9 @@ class RadioHandlerImpl extends BaseAudioHandler
   @override
   Future<void> toggleShuffle() async {
     _shuffleEnabled = !_shuffleEnabled;
-    await _player.setShuffleModeEnabled(_shuffleEnabled);
+    // Queue is managed in Dart (not ConcatenatingAudioSource); shuffle is
+    // applied in skipToNext/skipToPrevious when multiple local files exist.
+    await _player.setShuffleModeEnabled(false);
     customEvent.add({'event': 'shuffle_changed', 'enabled': _shuffleEnabled});
   }
 
@@ -88,9 +95,66 @@ class RadioHandlerImpl extends BaseAudioHandler
       _loopMode = LoopMode.off;
     }
 
-    await _player.setLoopMode(_loopMode);
+    // Local files: native loop mode breaks "repeat all" on a single track
+    // (just_audio often stops after one play). [_handleLocalPlaybackCompleted]
+    // owns repeat for _currentStation == null.
+    if (_currentStation == null) {
+      await _player.setLoopMode(LoopMode.off);
+    } else {
+      await _player.setLoopMode(_loopMode);
+    }
 
     customEvent.add({'event': 'repeat_changed', 'mode': _loopMode.toString()});
+  }
+
+  @override
+  Future<void> setSleepTimer(Duration duration) async {
+    await cancelSleepTimer();
+    if (duration <= Duration.zero) return;
+    _sleepEndsAt = DateTime.now().add(duration);
+    _sleepTimer = Timer(duration, () async {
+      await stop();
+      await cancelSleepTimer();
+    });
+    _sleepTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      _emitSleepTimerUpdate();
+    });
+    _emitSleepTimerUpdate();
+  }
+
+  @override
+  Future<void> cancelSleepTimer() async {
+    _sleepTimer?.cancel();
+    _sleepTicker?.cancel();
+    _sleepTimer = null;
+    _sleepTicker = null;
+    _sleepEndsAt = null;
+    _emitSleepTimerUpdate();
+  }
+
+  @override
+  Duration? getSleepTimerRemaining() {
+    final endsAt = _sleepEndsAt;
+    if (endsAt == null) return null;
+    final remaining = endsAt.difference(DateTime.now());
+    if (remaining <= Duration.zero) return Duration.zero;
+    return remaining;
+  }
+
+  void _emitSleepTimerUpdate() {
+    final remaining = getSleepTimerRemaining();
+    customEvent.add({
+      'event': 'sleep_timer_update',
+      'active': remaining != null && remaining > Duration.zero,
+      'remaining_seconds': remaining?.inSeconds ?? 0,
+    });
+  }
+
+  /// Required: [SeekHandler] does not implement this — [BaseAudioHandler.seek] is a no-op.
+  @override
+  Future<void> seek(Duration position) async {
+    await _player.seek(position);
+    _updatePlaybackState();
   }
 
   @override
@@ -199,6 +263,9 @@ class RadioHandlerImpl extends BaseAudioHandler
       await _player.setAudioSource(
         AudioSource.uri(playbackUri, tag: item),
       );
+      // Always off for local: repeat-one / repeat-all / advance-next are handled
+      // in [_handleLocalPlaybackCompleted] when processingState == completed.
+      await _player.setLoopMode(LoopMode.off);
       final resolved = _player.duration;
       mediaItem.add(
         resolved != null && resolved > Duration.zero
@@ -209,6 +276,63 @@ class RadioHandlerImpl extends BaseAudioHandler
     } catch (e) {
       print('Error playing local file: $e');
     }
+  }
+
+  /// When a local file finishes, apply repeat / queue advance / reset scrubber.
+  Future<void> _handleLocalPlaybackCompleted() async {
+    if (_localQueue.isEmpty || _handlingLocalCompletion) return;
+    _handlingLocalCompletion = true;
+    try {
+      switch (_loopMode) {
+        case LoopMode.one:
+          await _player.seek(Duration.zero);
+          await _player.play();
+          return;
+        case LoopMode.all:
+          if (_localQueue.length == 1) {
+            // Restart from beginning: seek+play after [completed] is unreliable
+            // on some devices; reloading the source matches multi-track wrap.
+            await _playLocalEntry(_localQueue[0]);
+          } else {
+            _localQueueIndex = (_localQueueIndex + 1) % _localQueue.length;
+            await _playLocalEntry(_localQueue[_localQueueIndex]);
+          }
+          return;
+        case LoopMode.off:
+          if (_localQueue.length > 1 &&
+              _localQueueIndex < _localQueue.length - 1) {
+            _localQueueIndex++;
+            await _playLocalEntry(_localQueue[_localQueueIndex]);
+          } else {
+            await _player.seek(Duration.zero);
+            await _player.pause();
+            playbackState.add(
+              playbackState.value.copyWith(
+                playing: false,
+                processingState: AudioProcessingState.completed,
+              ),
+            );
+            _updatePlaybackState();
+          }
+          return;
+      }
+    } catch (e) {
+      print('Local playback completion handling error: $e');
+    } finally {
+      _handlingLocalCompletion = false;
+    }
+  }
+
+  int _nextShuffleLocalIndex() {
+    if (_localQueue.length <= 1) return _localQueueIndex;
+    if (_localQueue.length == 2) {
+      return 1 - _localQueueIndex;
+    }
+    var next = _localQueueIndex;
+    for (var i = 0; i < 12 && next == _localQueueIndex; i++) {
+      next = Random().nextInt(_localQueue.length);
+    }
+    return next;
   }
 
   // Enhanced player listeners for stream recovery
@@ -225,12 +349,16 @@ class RadioHandlerImpl extends BaseAudioHandler
       }
 
       if (playerState.processingState == ProcessingState.completed) {
-        playbackState.add(
-          playbackState.value.copyWith(
-            playing: false, // ← IMPORTANT
-            processingState: AudioProcessingState.completed,
-          ),
-        );
+        if (_currentStation == null && _localQueue.isNotEmpty) {
+          unawaited(_handleLocalPlaybackCompleted());
+        } else {
+          playbackState.add(
+            playbackState.value.copyWith(
+              playing: false,
+              processingState: AudioProcessingState.completed,
+            ),
+          );
+        }
       }
 
       if (!playerState.playing &&
@@ -565,7 +693,11 @@ class RadioHandlerImpl extends BaseAudioHandler
     // ── Local file mode ───────────────────────────────────────────────────────
     // _currentStation is null when a local file is playing.
     if (_currentStation == null && _localQueue.isNotEmpty) {
-      _localQueueIndex = (_localQueueIndex + 1) % _localQueue.length;
+      if (_shuffleEnabled && _localQueue.length > 1) {
+        _localQueueIndex = _nextShuffleLocalIndex();
+      } else {
+        _localQueueIndex = (_localQueueIndex + 1) % _localQueue.length;
+      }
       await _playLocalEntry(_localQueue[_localQueueIndex]);
       return;
     }
@@ -595,8 +727,12 @@ class RadioHandlerImpl extends BaseAudioHandler
   Future<void> skipToPrevious() async {
     // ── Local file mode ───────────────────────────────────────────────────────
     if (_currentStation == null && _localQueue.isNotEmpty) {
-      _localQueueIndex =
-          (_localQueueIndex - 1 + _localQueue.length) % _localQueue.length;
+      if (_shuffleEnabled && _localQueue.length > 1) {
+        _localQueueIndex = _nextShuffleLocalIndex();
+      } else {
+        _localQueueIndex =
+            (_localQueueIndex - 1 + _localQueue.length) % _localQueue.length;
+      }
       await _playLocalEntry(_localQueue[_localQueueIndex]);
       return;
     }
@@ -674,16 +810,31 @@ class RadioHandlerImpl extends BaseAudioHandler
         controls.add(MediaControl.play);
       }
     }
-    if (_radioStations.length > 1) {
+    final bool showSkip = _radioStations.length > 1 ||
+        (_currentStation == null && _localQueue.length > 1);
+    if (showSkip) {
       controls.add(MediaControl.skipToPrevious);
       controls.add(MediaControl.skipToNext);
     }
     controls.add(MediaControl.stop);
+
+    final systemActions = <MediaAction>{
+      MediaAction.seek,
+      if (showSkip) ...<MediaAction>{
+        MediaAction.skipToPrevious,
+        MediaAction.skipToNext,
+      },
+    };
+
     playbackState.add(
       playbackState.value.copyWith(
         controls: controls,
-        androidCompactActionIndices: const [0, 1, 2],
-        systemActions: controls.toSet().cast<MediaAction>(),
+        androidCompactActionIndices:
+            controls.length > 2 ? const [0, 1, 2] : [0, 1],
+        systemActions: systemActions,
+        updatePosition: _player.position,
+        bufferedPosition: _player.bufferedPosition,
+        speed: _player.speed,
         processingState:
             {
               ProcessingState.idle: AudioProcessingState.idle,
@@ -1042,13 +1193,16 @@ class RadioHandlerImpl extends BaseAudioHandler
 
   @override
   Future<void> play() async {
-    if (_player.processingState == ProcessingState.completed &&
-        _currentStation != null) {
-      await _playStation(_currentStation!, isRecovery: true);
-    } else {
-      await WakelockPlus.enable();
-      await _player.play();
+    if (_player.processingState == ProcessingState.completed) {
+      if (_currentStation != null) {
+        await _playStation(_currentStation!, isRecovery: true);
+        return;
+      }
+      // Local file finished: restart from the beginning.
+      await _player.seek(Duration.zero);
     }
+    await WakelockPlus.enable();
+    await _player.play();
   }
 
   @override
@@ -1060,6 +1214,7 @@ class RadioHandlerImpl extends BaseAudioHandler
   @override
   Future<void> stop() async {
     await _player.stop();
+    await cancelSleepTimer();
     await WakelockPlus.disable();
     return super.stop();
   }
@@ -1074,6 +1229,8 @@ class RadioHandlerImpl extends BaseAudioHandler
 
   Future<void> cleanup() async {
     _recoveryTimer?.cancel();
+    _sleepTimer?.cancel();
+    _sleepTicker?.cancel();
     await _player.dispose();
   }
 

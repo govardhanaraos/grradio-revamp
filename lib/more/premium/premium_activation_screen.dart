@@ -27,14 +27,13 @@ class _PremiumActivationScreenState extends State<PremiumActivationScreen> {
       if (result['is_premium'] == true) {
         print('is_premium: true');
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('is_premium', true);
         await prefs.setString(
           'saved_license_key',
           inputKey,
         ); // Store to manage devices later
 
         // This triggers the UI to switch automatically
-        isPremiumUser.value = true;
+        await setPremiumUserState(true);
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -79,9 +78,11 @@ class _PremiumActivationScreenState extends State<PremiumActivationScreen> {
             "You are a PRO Member",
             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
-          const Text(
+          Text(
             "Ads are now disabled across the app.",
-            style: TextStyle(color: Colors.grey),
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
           ),
           const SizedBox(height: 40),
           ElevatedButton.icon(

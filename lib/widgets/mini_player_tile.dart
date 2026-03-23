@@ -24,7 +24,9 @@ class MiniPlayerTile extends StatelessWidget {
   final bool isBuffering;
   final VoidCallback onTogglePlay;
   final VoidCallback onTap;
+  final VoidCallback? onDismiss;
   final dynamic audioHandler;
+  final String sleepLabel;
 
   const MiniPlayerTile({
     Key? key,
@@ -33,6 +35,8 @@ class MiniPlayerTile extends StatelessWidget {
     required this.onTogglePlay,
     required this.onTap,
     required this.audioHandler,
+    this.onDismiss,
+    this.sleepLabel = '',
     this.isRecording = false,
     this.isBuffering = false,
   }) : super(key: key);
@@ -107,18 +111,53 @@ class MiniPlayerTile extends StatelessWidget {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              mediaItem?.artist ?? 'Select a station',
+                              sleepLabel.isNotEmpty
+                                  ? sleepLabel
+                                  : (mediaItem?.artist ?? 'Select a station'),
                               maxLines: 1,
                               style: TextStyle(
                                 fontSize: 12,
-                                color: isDark
-                                    ? Colors.grey[400]
-                                    : Colors.grey[600],
+                                color: sleepLabel.isNotEmpty
+                                    ? const Color(0xFF7C4DFF)
+                                    : (isDark
+                                          ? Colors.grey[400]
+                                          : Colors.grey[600]),
+                                fontWeight: sleepLabel.isNotEmpty
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
                               ),
                             ),
                           ],
                         ),
                       ),
+
+                      if (onDismiss != null) ...[
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: isRecording
+                                ? null
+                                : () {
+                                    HapticFeedback.lightImpact();
+                                    onDismiss!();
+                                  },
+                            customBorder: const CircleBorder(),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: 22,
+                                color: isRecording
+                                    ? Colors.grey
+                                    : (isDark
+                                        ? Colors.white54
+                                        : Colors.black45),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
 
                       // ── Play / Pause ───────────────────────────────────
                       Opacity(

@@ -2,7 +2,6 @@
 import 'dart:convert';
 
 import 'package:grradio/Env.dart';
-import 'package:hive_flutter/hive_flutter.dart'; // Import Hive
 import 'package:http/http.dart' as http; // Use the http package
 
 import 'radiostation.dart';
@@ -10,21 +9,8 @@ import 'radiostation.dart';
 // IMPORTANT: Use your deployed Render URL here.
 String _baseUrl = Env.apiBaseUrl;
 const String _apiEndpoint = '/stations';
-const String _boxName = 'stationsBox';
 
 class RadioStationServiceAPI {
-  Future<Box<RadioStation>> _getBox() async {
-    if (!Hive.isBoxOpen(_boxName)) {
-      return await Hive.openBox<RadioStation>(_boxName);
-    }
-    return Hive.box<RadioStation>(_boxName);
-  }
-
-  Future<List<RadioStation>> loadFromCache() async {
-    final box = await _getBox();
-    return box.values.toList();
-  }
-
   // 💡 MODIFIED: Accept only 'page' and 'limit' to support sequential fetching
   Future<List<RadioStation>> fetchRadioStations({
     int page = 1,
@@ -60,12 +46,8 @@ class RadioStationServiceAPI {
             .map((map) => RadioStation.fromMap(map as Map<String, dynamic>))
             .toList();
 
-        if (page == 1 && stations.isNotEmpty) {
-          final box = await _getBox();
-          // Clear old cache and add new to ensure freshness
-          await box.clear();
-          await box.addAll(stations);
-        }
+        // Persistence is handled in main.dart (cachedStations) so we never
+        // write only page 1 into the wrong box or wipe the full offline cache mid-sync.
 
         return stations;
       } else {

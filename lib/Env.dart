@@ -15,4 +15,16 @@ class Env {
   static const String supportEmail = 'grradio.customercare@gmail.com';
   static const String appStoreId = ''; // iOS App Store ID — set when available
   static const String appName = 'GR Radio';
+
+  // ── RevenueCat ──────────────────────────────────────────────────────────────
+  // Use PUBLIC SDK keys from RevenueCat dashboard:
+  // Android key format usually starts with "goog_"
+  // iOS key format usually starts with "appl_"
+  //sk_CPpSAxwIVwwXPBizbMGkpdAMBJaan
+  //test_EWJndZnjbUWEyVNJYEKSuRLKyBS
+  static const String revenueCatAndroidPublicSdkKey =
+      'test_EWJndZnjbUWEyVNJYEKSuRLKyBS';
+  static const String revenueCatIosPublicSdkKey =
+      'test_EWJndZnjbUWEyVNJYEKSuRLKyBS';
+  static const String revenueCatEntitlementId = 'GR Radio Pro';
 }

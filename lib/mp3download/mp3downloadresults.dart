@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:grradio/ads/ad_config_provider.dart';
 import 'package:grradio/ads/banner_ad_widget.dart';
 import 'package:grradio/data/track_metadata.dart';
 import 'package:grradio/main.dart';
@@ -19,6 +20,7 @@ import 'package:html/parser.dart' as html;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:provider/provider.dart';
 
 class Mp3DownloadResultsScreen extends StatefulWidget {
   final String searchQuery;
@@ -573,11 +575,13 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
               SizedBox(height: 8),
               Text(
                 'File saved to:',
-                style: TextStyle(fontWeight: FontWeight.bold),
+                style: Theme.of(context).textTheme.titleSmall,
               ),
               Text(
                 filePath,
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
               ),
             ],
           ),
@@ -649,6 +653,7 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
     required String albumName,
     required String artUri,
   }) {
+    final cs = Theme.of(context).colorScheme;
     final downloadKey = '${url.hashCode}-$fileName';
     final isDownloading = _isDownloading[downloadKey] == true;
     final progress = _downloadProgress[downloadKey] ?? 0.0;
@@ -668,11 +673,11 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
                   ),
             style: ElevatedButton.styleFrom(
               backgroundColor: isDownloading
-                  ? Colors.grey.shade300
-                  : Colors.green.shade50,
+                  ? cs.surfaceContainerHighest
+                  : cs.primary.withValues(alpha: 0.12),
               foregroundColor: isDownloading
-                  ? Colors.grey
-                  : Colors.green.shade800,
+                  ? cs.onSurfaceVariant
+                  : cs.primary,
               elevation: 1,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -680,18 +685,18 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
               minimumSize: Size(double.infinity, 40),
             ),
             icon: isDownloading
-                ? const SizedBox(
+                ? SizedBox(
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                      valueColor: AlwaysStoppedAnimation<Color>(cs.primary),
                     ),
                   )
-                : const Icon(CupertinoIcons.arrow_down_circle, size: 16),
+                : Icon(CupertinoIcons.arrow_down_circle, size: 16),
             label: Text(
               isDownloading ? 'Downloading...' : buttonText,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+              style: Theme.of(context).textTheme.labelLarge,
             ),
           ),
           // Progress indicator
@@ -699,13 +704,15 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
             const SizedBox(height: 4),
             LinearProgressIndicator(
               value: progress / 100,
-              backgroundColor: Colors.green.shade100,
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+              backgroundColor: cs.surfaceContainerHighest,
+              valueColor: AlwaysStoppedAnimation<Color>(cs.primary),
             ),
             const SizedBox(height: 2),
             Text(
               '${progress.toStringAsFixed(1)}%',
-              style: TextStyle(fontSize: 10, color: Colors.green.shade700),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: cs.primary,
+                  ),
             ),
           ],
         ],
@@ -1006,7 +1013,9 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
                     SizedBox(width: 12),
                     Text(
                       'Loading details...',
-                      style: TextStyle(fontSize: 14, color: Colors.grey),
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
                     ),
                   ],
                 ),
@@ -1064,16 +1073,17 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
               width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.blueGrey.shade50,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blueGrey.shade200),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outline.withValues(
+                        alpha: 0.35,
+                      ),
+                ),
               ),
               child: Text(
                 additionalInfo,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).textTheme.bodyLarge!.color,
-                ),
+                style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
             const SizedBox(height: 12),
@@ -1141,15 +1151,17 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
   }
 
   Widget _buildLoadingState() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          CircularProgressIndicator(),
+          CircularProgressIndicator(color: cs.primary),
           SizedBox(height: 16),
           Text(
             'Searching for "${widget.searchQuery}"...',
-            style: TextStyle(fontSize: 16, color: Colors.blueGrey),
+            style: tt.titleMedium?.copyWith(color: cs.onSurfaceVariant),
           ),
         ],
       ),
@@ -1157,6 +1169,8 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
   }
 
   Widget _buildErrorState() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -1164,22 +1178,21 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
           Icon(
             CupertinoIcons.exclamationmark_triangle,
             size: 64,
-            color: Colors.orange,
+            color: cs.error,
           ),
           SizedBox(height: 16),
           Text(
             'Search Failed',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.red,
-            ),
+            style: tt.titleLarge?.copyWith(color: cs.onSurface),
           ),
           SizedBox(height: 8),
-          Text(
-            _errorMessage,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              _errorMessage,
+              textAlign: TextAlign.center,
+              style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+            ),
           ),
           SizedBox(height: 16),
           ElevatedButton(
@@ -1192,24 +1205,26 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
   }
 
   Widget _buildEmptyState() {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(CupertinoIcons.search, size: 64, color: Colors.grey),
+          Icon(
+            CupertinoIcons.search,
+            size: 64,
+            color: cs.primary.withValues(alpha: 0.35),
+          ),
           SizedBox(height: 16),
           Text(
             'No Results Found',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey,
-            ),
+            style: tt.titleLarge?.copyWith(color: cs.onSurface),
           ),
           SizedBox(height: 8),
           Text(
             'Try searching with different keywords',
-            style: TextStyle(fontSize: 14, color: Colors.grey),
+            style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
           ),
         ],
       ),
@@ -1218,21 +1233,13 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final wideLandscape = mq.orientation == Orientation.landscape && mq.size.width >= 600;
     return Scaffold(
       appBar: AppBar(
         title: Text(
           'Search Results',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        backgroundColor: Theme.of(context).unselectedWidgetColor,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(CupertinoIcons.back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
+          style: Theme.of(context).textTheme.titleLarge,
         ),
       ),
       body: Container(
@@ -1311,18 +1318,25 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _fetchSearchResults,
-        backgroundColor: Colors.blueGrey,
-        child: Icon(CupertinoIcons.refresh, color: Colors.white),
+        backgroundColor: Theme.of(context).colorScheme.primary,
+        child: Icon(
+          CupertinoIcons.refresh,
+          color: Theme.of(context).colorScheme.onPrimary,
+        ),
         tooltip: 'Refresh Results',
       ),
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Show the ad first
-          if (globalAdsEnabled) const BannerAdWidget(),
+          Consumer<AdConfigProvider>(
+            builder: (context, ad, _) {
+              if (!ad.globalAdsEnabled) return const SizedBox.shrink();
+              return const BannerAdWidget();
+            },
+          ),
 
-          // Then conditionally show the mini player
-          if (_showMiniPlayer)
+          // Then conditionally show the mini player (disabled on landscape wide)
+          if (_showMiniPlayer && !wideLandscape)
             StreamBuilder<bool>(
               stream: globalMp3QueueService.playbackState
                   .map((s) => s.playing)

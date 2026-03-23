@@ -6,6 +6,7 @@ import 'package:audio_service/audio_service.dart'; // 💡 NEW: For MediaItemmpo
 import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:grradio/ads/ad_config_provider.dart';
 import 'package:grradio/ads/banner_ad_widget.dart';
 import 'package:grradio/api/analytics_service_api.dart';
 import 'package:grradio/data/track_metadata.dart';
@@ -19,6 +20,7 @@ import 'package:html/dom.dart'
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:provider/provider.dart';
 
 class AlbumDetailsScreen extends StatefulWidget {
   final String albumId;
@@ -1748,20 +1750,13 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final wideLandscape = mq.orientation == Orientation.landscape && mq.size.width >= 600;
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Album Details',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-        backgroundColor: Theme.of(context).unselectedWidgetColor,
-        elevation: 0,
+        title: const Text('Album Details'),
         leading: IconButton(
-          icon: const Icon(CupertinoIcons.back, color: Colors.white),
+          icon: const Icon(CupertinoIcons.back),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -1831,8 +1826,13 @@ class _AlbumDetailsScreenState extends State<AlbumDetailsScreen> {
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (globalAdsEnabled) const BannerAdWidget(),
-          if (_showMiniPlayer)
+          Consumer<AdConfigProvider>(
+            builder: (context, ad, _) {
+              if (!ad.globalAdsEnabled) return const SizedBox.shrink();
+              return const BannerAdWidget();
+            },
+          ),
+          if (_showMiniPlayer && !wideLandscape)
             StreamBuilder<bool>(
               stream: globalMp3QueueService.playbackState
                   .map((s) => s.playing)

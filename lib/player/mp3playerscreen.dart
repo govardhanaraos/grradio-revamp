@@ -128,6 +128,11 @@ class Mp3PlayerScreen extends StatefulWidget {
 
 class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
     with TickerProviderStateMixin {
+  bool _wideLandscape(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    return mq.orientation == Orientation.landscape && mq.size.width >= 600;
+  }
+
   final OnAudioQuery _audioQuery = OnAudioQuery();
   final AnalyticsServiceAPI _analyticsService = AnalyticsServiceAPI();
 
@@ -184,6 +189,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
   InListPlacement _downloadsListPlacement = const InListPlacement();
   InListPlacement _recordingsListPlacement = const InListPlacement();
   bool _adConfigLoaded = false;
+  VoidCallback? _adConfigListener;
 
   @override
   void initState() {
@@ -220,15 +226,12 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
       final adConfig = context.read<AdConfigProvider>();
       if (adConfig.initialized) {
         _snapshotAdConfig(adConfig);
-      } else {
-        late void Function() listener;
-        listener = () {
-          if (!mounted) return;
-          _snapshotAdConfig(adConfig);
-          adConfig.removeListener(listener);
-        };
-        adConfig.addListener(listener);
       }
+      _adConfigListener = () {
+        if (!mounted) return;
+        _snapshotAdConfig(adConfig);
+      };
+      adConfig.addListener(_adConfigListener!);
     });
   }
 
@@ -314,6 +317,11 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
 
   @override
   void dispose() {
+    final listener = _adConfigListener;
+    if (listener != null) {
+      adConfigProvider.removeListener(listener);
+      _adConfigListener = null;
+    }
     _tabController.dispose();
     for (final sc in _scrollControllers) {
       sc.removeListener(_onScrollChanged);
@@ -989,6 +997,78 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
     final tab = _tabController.index;
     final isRecTab = tab == 2;
     final isDlTab = tab == 1;
+    final wl = _wideLandscape(context);
+    final bottomSpacer = wl ? 0.0 : 95.0;
+    final bottomSpacerWithPlayers = wl ? 0.0 : 180.0;
+
+    final tabViewChildren = <Widget>[
+      _buildSongList(
+        rawList: (_songs ?? []).cast<dynamic>(),
+        tabIndex: 0,
+        isRec: false,
+        isDl: false,
+        emptyIcon: Icons.music_note_outlined,
+        emptyTitle: 'No Music Found',
+        emptySubtitle: 'Check your device storage for MP3 files.',
+        onRefresh: _loadAllSongs,
+        emptyIconSz: emptyIconSz,
+        emptyTitleSz: emptyTitleSz,
+        emptySubSz: emptySubSz,
+        btnPad: btnPad,
+      ),
+      _buildSongList(
+        rawList: (_downloadedMp3s ?? []).cast<dynamic>(),
+        tabIndex: 1,
+        isRec: false,
+        isDl: true,
+        emptyIcon: Icons.download_for_offline_outlined,
+        emptyTitle: 'No Downloads',
+        emptySubtitle: 'Songs you download will appear here.',
+        onRefresh: _loadDownloadedMp3s,
+        emptyIconSz: emptyIconSz,
+        emptyTitleSz: emptyTitleSz,
+        emptySubSz: emptySubSz,
+        btnPad: btnPad,
+      ),
+      _buildSongList(
+        rawList: (_recordings ?? []).cast<dynamic>(),
+        tabIndex: 2,
+        isRec: true,
+        isDl: false,
+        emptyIcon: Icons.mic_none_outlined,
+        emptyTitle: 'No Recordings',
+        emptySubtitle: 'Your radio recordings will be saved here.',
+        onRefresh: _loadLocalRecordings,
+        emptyIconSz: emptyIconSz,
+        emptyTitleSz: emptyTitleSz,
+        emptySubSz: emptySubSz,
+        btnPad: btnPad,
+      ),
+    ];
+
+    Widget mainTabArea() {
+      if (_isCheckingPermission) {
+        return const Center(
+          child: CircularProgressIndicator(
+            color: Color(0xFF7C4DFF),
+          ),
+        );
+      }
+      if (!_hasPermission) {
+        return _buildPermissionDenied(
+          sw,
+          sh,
+          emptyIconSz,
+          emptyTitleSz,
+          emptySubSz,
+          iconSz,
+        );
+      }
+      return TabBarView(
+        controller: _tabController,
+        children: tabViewChildren,
+      );
+    }
 
     return Scaffold(
       extendBody: true,
@@ -1008,7 +1088,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
               bottom: false,
               child: Column(
                 children: [
-                  _buildHeader(isDark, sw),
+                  _buildHeader(isDark, sw, wideLandscape: wl),
                   AnimatedSize(
                     duration: const Duration(milliseconds: 200),
                     child: _isSelecting
@@ -1021,101 +1101,41 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                         ? _buildSearchBar(isDark, tab)
                         : const SizedBox.shrink(),
                   ),
-                  Expanded(
-                    child: _isCheckingPermission
-                        ? const Center(
-                            child: CircularProgressIndicator(
-                              color: Color(0xFF7C4DFF),
-                            ),
-                          )
-                        : !_hasPermission
-                        ? _buildPermissionDenied(
-                            sw,
-                            sh,
-                            emptyIconSz,
-                            emptyTitleSz,
-                            emptySubSz,
-                            iconSz,
-                          )
-                        : TabBarView(
-                            controller: _tabController,
-                            children: [
-                              _buildSongList(
-                                rawList: (_songs ?? []).cast<dynamic>(),
-                                tabIndex: 0,
-                                isRec: false,
-                                isDl: false,
-                                emptyIcon: Icons.music_note_outlined,
-                                emptyTitle: 'No Music Found',
-                                emptySubtitle:
-                                    'Check your device storage for MP3 files.',
-                                onRefresh: _loadAllSongs,
-                                emptyIconSz: emptyIconSz,
-                                emptyTitleSz: emptyTitleSz,
-                                emptySubSz: emptySubSz,
-                                btnPad: btnPad,
+                  Expanded(child: mainTabArea()),
+                  if (_showBanner)
+                    StreamBuilder<MediaItem?>(
+                      stream: globalRadioAudioHandler.mediaItem,
+                      builder: (context, radioSnap) {
+                        return StreamBuilder<bool>(
+                          stream: globalMp3QueueService.playbackState
+                              .map((s) => s.playing)
+                              .distinct(),
+                          builder: (context, mp3Snap) {
+                            final hasRadio = radioSnap.data != null;
+                            final hasMp3 = mp3Snap.data ?? false;
+                            final hasAnyMiniPlayer = hasRadio || hasMp3;
+
+                            return Padding(
+                              padding: EdgeInsets.only(
+                                bottom: hasAnyMiniPlayer
+                                    ? bottomSpacerWithPlayers
+                                    : bottomSpacer,
                               ),
-                              _buildSongList(
-                                rawList: (_downloadedMp3s ?? [])
-                                    .cast<dynamic>(),
-                                tabIndex: 1,
-                                isRec: false,
-                                isDl: true,
-                                emptyIcon: Icons.download_for_offline_outlined,
-                                emptyTitle: 'No Downloads',
-                                emptySubtitle:
-                                    'Songs you download will appear here.',
-                                onRefresh: _loadDownloadedMp3s,
-                                emptyIconSz: emptyIconSz,
-                                emptyTitleSz: emptyTitleSz,
-                                emptySubSz: emptySubSz,
-                                btnPad: btnPad,
-                              ),
-                              _buildSongList(
-                                rawList: (_recordings ?? []).cast<dynamic>(),
-                                tabIndex: 2,
-                                isRec: true,
-                                isDl: false,
-                                emptyIcon: Icons.mic_none_outlined,
-                                emptyTitle: 'No Recordings',
-                                emptySubtitle:
-                                    'Your radio recordings will be saved here.',
-                                onRefresh: _loadLocalRecordings,
-                                emptyIconSz: emptyIconSz,
-                                emptyTitleSz: emptyTitleSz,
-                                emptySubSz: emptySubSz,
-                                btnPad: btnPad,
-                              ),
-                            ],
-                          ),
-                  ),
-                  StreamBuilder<MediaItem?>(
-                    stream: globalRadioAudioHandler.mediaItem,
-                    builder: (context, snap) {
-                      final mi = snap.data;
-                      if (mi == null)
-                        return _showBanner
-                            ? const BannerAdWidget()
-                            : const SizedBox.shrink();
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_showBanner) const BannerAdWidget(),
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 105),
-                            child: _buildMiniPlayer(),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
+                              child: const BannerAdWidget(),
+                            );
+                          },
+                        );
+                      },
+                    )
+                  else
+                    SizedBox(height: bottomSpacer),
                 ],
               ),
             ),
           ),
           Positioned(
             right: 16,
-            bottom: 110,
+            bottom: wl ? 100 : 110,
             child: AnimatedOpacity(
               opacity: _showScrollTop ? 1.0 : 0.0,
               duration: const Duration(milliseconds: 250),
@@ -1142,8 +1162,78 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
 
   // ── Header ────────────────────────────────────────────────────────────────
 
-  Widget _buildHeader(bool isDark, double sw) {
+  String _railTabLabel(String name, int? count) {
+    if (count != null && count > 0) return '$name ($count)';
+    return name;
+  }
+
+  Widget _buildLibrarySideRail(bool isDark) {
+    const brandPurple = Color(0xFF7C4DFF);
+    final grey = Colors.grey.shade500;
+    final rail = NavigationRail(
+      selectedIndex: _tabController.index,
+      onDestinationSelected: (i) => _tabController.animateTo(i),
+      labelType: NavigationRailLabelType.all,
+      minWidth: 88,
+      groupAlignment: -1,
+      useIndicator: true,
+      indicatorColor: brandPurple.withOpacity(0.14),
+      selectedIconTheme: const IconThemeData(color: brandPurple, size: 24),
+      unselectedIconTheme: IconThemeData(color: grey, size: 22),
+      selectedLabelTextStyle: const TextStyle(
+        color: brandPurple,
+        fontWeight: FontWeight.w800,
+        fontSize: 11,
+      ),
+      unselectedLabelTextStyle: TextStyle(
+        color: grey,
+        fontWeight: FontWeight.w700,
+        fontSize: 11,
+      ),
+      destinations: [
+        NavigationRailDestination(
+          icon: const Icon(Icons.music_note_outlined),
+          selectedIcon: const Icon(Icons.music_note),
+          label: Text(_railTabLabel('Music', _songs?.length)),
+        ),
+        NavigationRailDestination(
+          icon: const Icon(Icons.download_done_outlined),
+          selectedIcon: const Icon(Icons.download_done_rounded),
+          label: Text(_railTabLabel('Downloads', _downloadedMp3s?.length)),
+        ),
+        NavigationRailDestination(
+          icon: const Icon(Icons.mic_none_outlined),
+          selectedIcon: const Icon(Icons.mic),
+          label: Text(_railTabLabel('Recordings', _recordings?.length)),
+        ),
+      ],
+    );
+    return Material(
+      color: isDark ? const Color(0xFF0D0D18) : Colors.white,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final minH = constraints.hasBoundedHeight && constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : 0.0;
+          return SingleChildScrollView(
+            clipBehavior: Clip.hardEdge,
+            physics: const BouncingScrollPhysics(),
+            child: minH > 0
+                ? ConstrainedBox(
+                    constraints: BoxConstraints(minHeight: minH),
+                    child: rail,
+                  )
+                : rail,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildHeader(bool isDark, double sw, {required bool wideLandscape}) {
     final storage = _totalStorageLabel();
+    final tt = Theme.of(context).textTheme;
+    final cs = Theme.of(context).colorScheme;
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF0D0D18) : Colors.white,
@@ -1159,7 +1249,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            height: 3,
+            height: wideLandscape ? 2 : 3,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
@@ -1167,11 +1257,11 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
             ),
           ),
           Padding(
-            padding: const EdgeInsets.only(
-              top: 14,
+            padding: EdgeInsets.only(
+              top: wideLandscape ? 8 : 14,
               left: 16,
               right: 8,
-              bottom: 2,
+              bottom: wideLandscape ? 4 : 2,
             ),
             child: Row(
               children: [
@@ -1182,19 +1272,20 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'Library',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
+                          style: tt.headlineSmall?.copyWith(
+                            fontSize: wideLandscape ? 22 : 28,
+                            fontFamily: 'Outfit',
+                            color: cs.onSurface,
                           ),
                         ),
                         if (storage.isNotEmpty)
                           Text(
                             storage,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[500],
+                            style: tt.labelMedium?.copyWith(
+                              fontSize: wideLandscape ? 11 : null,
+                              color: cs.onSurfaceVariant,
                             ),
                           ),
                       ],
@@ -1202,6 +1293,9 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                   ),
                 ),
                 IconButton(
+                  visualDensity: wideLandscape
+                      ? VisualDensity.compact
+                      : VisualDensity.standard,
                   icon: Icon(
                     _searchVisible
                         ? Icons.search_off_rounded
@@ -1217,6 +1311,9 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                   }),
                 ),
                 IconButton(
+                  visualDensity: wideLandscape
+                      ? VisualDensity.compact
+                      : VisualDensity.standard,
                   icon: const Icon(Icons.sort_rounded),
                   tooltip: 'Sort',
                   onPressed: _showSortSheet,
@@ -1230,10 +1327,15 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
             indicatorColor: const Color(0xFF7C4DFF),
             indicatorWeight: 3,
             labelColor: const Color(0xFF7C4DFF),
-            unselectedLabelColor: Colors.grey,
-            labelStyle: const TextStyle(
-              fontWeight: FontWeight.bold,
+            unselectedLabelColor: cs.onSurfaceVariant,
+            labelStyle: tt.titleSmall?.copyWith(
+              fontWeight: FontWeight.w800,
               fontSize: 15,
+            ),
+            unselectedLabelStyle: tt.titleSmall?.copyWith(
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
+              color: cs.onSurfaceVariant,
             ),
             tabs: [
               Tab(
@@ -1297,46 +1399,54 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
     ],
   );
 
-  Widget _buildSearchBar(bool isDark, int tab) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.white.withOpacity(0.08) : Colors.grey.shade100,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: _searchQueries[tab].isNotEmpty
-              ? const Color(0xFF7C4DFF).withOpacity(0.5)
-              : Colors.transparent,
-          width: 1.5,
-        ),
-      ),
-      child: TextField(
-        controller: _searchControllers[tab],
-        autofocus: true,
-        style: TextStyle(color: isDark ? Colors.white : Colors.black),
-        decoration: InputDecoration(
-          icon: Icon(
-            Icons.search,
+  Widget _buildSearchBar(bool isDark, int tab) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
             color: _searchQueries[tab].isNotEmpty
-                ? const Color(0xFF7C4DFF)
-                : Colors.grey[500],
-            size: 18,
+                ? cs.primary.withValues(alpha: 0.45)
+                : cs.outline.withValues(alpha: 0.3),
+            width: 1.5,
           ),
-          hintText: 'Search ${['songs', 'downloads', 'recordings'][tab]}...',
-          hintStyle: TextStyle(color: Colors.grey[500]),
-          border: InputBorder.none,
-          suffixIcon: _searchQueries[tab].isNotEmpty
-              ? IconButton(
-                  icon: Icon(Icons.close, color: Colors.grey[500], size: 18),
-                  onPressed: () => _searchControllers[tab].clear(),
-                )
-              : null,
+        ),
+        child: TextField(
+          controller: _searchControllers[tab],
+          autofocus: true,
+          style: tt.bodyLarge?.copyWith(color: cs.onSurface),
+          decoration: InputDecoration(
+            icon: Icon(
+              Icons.search,
+              color: _searchQueries[tab].isNotEmpty
+                  ? cs.primary
+                  : cs.onSurfaceVariant,
+              size: 18,
+            ),
+            hintText: 'Search ${['songs', 'downloads', 'recordings'][tab]}...',
+            hintStyle: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+            border: InputBorder.none,
+            suffixIcon: _searchQueries[tab].isNotEmpty
+                ? IconButton(
+                    icon: Icon(
+                      Icons.close,
+                      color: cs.onSurfaceVariant,
+                      size: 18,
+                    ),
+                    onPressed: () => _searchControllers[tab].clear(),
+                  )
+                : null,
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _buildSelectToolbar(bool isRec, bool isDl) => Container(
     color: const Color(0xFF7C4DFF).withOpacity(0.08),
@@ -1608,6 +1718,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
       strokeWidth: 2.5,
       onRefresh: () async {
         HapticFeedback.mediumImpact();
+        await adConfigProvider.refresh(isPremiumUser: isPremiumUser.value);
         await onRefresh();
       },
       child: child,
@@ -1654,18 +1765,20 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
     return '${months[d.month]} ${d.day}, ${d.year}';
   }
 
-  Widget _buildDateHeader(String label) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-    child: Text(
-      label,
-      style: TextStyle(
-        fontSize: 12,
-        fontWeight: FontWeight.bold,
-        color: Colors.grey[500],
-        letterSpacing: 0.4,
+  Widget _buildDateHeader(String label) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Text(
+        label,
+        style: tt.labelLarge?.copyWith(
+          color: cs.onSurfaceVariant,
+          letterSpacing: 0.4,
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _buildListTile({
     required dynamic item,
@@ -1682,6 +1795,8 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
   }) {
     final canAct = isRec || isDl;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 250),
@@ -1720,10 +1835,9 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
           title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
-            color: isSel ? const Color(0xFF7C4DFF) : null,
-            fontSize: 14,
+          style: tt.titleSmall?.copyWith(
+            fontWeight: isSel ? FontWeight.w800 : FontWeight.w700,
+            color: isSel ? const Color(0xFF7C4DFF) : cs.onSurface,
           ),
         ),
         subtitle: Padding(
@@ -1735,10 +1849,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                   subtitle,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? Colors.grey[400] : Colors.grey[600],
-                  ),
+                  style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
                 ),
               ),
               if (dur != Duration.zero)
@@ -1794,7 +1905,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                           : Icons.play_circle_filled,
                       key: ValueKey(isPlay),
                       size: 34,
-                      color: isSel ? const Color(0xFF7C4DFF) : Colors.grey[400],
+                      color: isSel ? const Color(0xFF7C4DFF) : cs.onSurfaceVariant,
                     ),
                   ),
                 ],

@@ -2,9 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:grradio/main.dart';
-import 'package:grradio/more/securestorage/deviceidsecurestorage.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart'; // Use the http package
+
+import '../../Env.dart';
 
 class ActivationScreen extends StatefulWidget {
   @override
@@ -26,7 +26,7 @@ class _ActivationScreenState extends State<ActivationScreen> {
     try {
       final response = await http.post(
         Uri.parse(
-          "http://127.0.0.1:8000/premium/verify-license",
+          "${Env.apiBaseUrl}/premium/verify-license",
         ), // Use your actual IP for physical devices
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
@@ -36,12 +36,8 @@ class _ActivationScreenState extends State<ActivationScreen> {
       );
 
       if (response.statusCode == 200) {
-        // 1. Update Global State
-        isUserPremium.value = true;
-
-        // 2. Persist locally so ads stay hidden next time
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('is_premium', true);
+        // 1. Update global premium + ad gating state
+        await setPremiumUserState(true);
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text("Premium Activated! Ads Removed.")),

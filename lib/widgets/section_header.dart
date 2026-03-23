@@ -16,6 +16,7 @@ class SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding:
           padding ??
@@ -25,13 +26,22 @@ class SectionHeader extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontFamily: 'Outfit',
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: cs.onSurface,
+            ),
           ),
           TextButton(
             onPressed: onSeeAll,
             child: const Text(
               "See All",
-              style: TextStyle(color: Color(0xFF7C4DFF)),
+              style: TextStyle(
+                fontFamily: 'Outfit',
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF7C4DFF),
+              ),
             ),
           ),
         ],

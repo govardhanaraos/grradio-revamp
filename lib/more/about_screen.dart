@@ -27,23 +27,8 @@ class AboutScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'About',
-          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-        ),
+        title: const Text('About'),
         centerTitle: true,
-        iconTheme: const IconThemeData(color: Colors.white),
-        flexibleSpace: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF7C4DFF), Color(0xFF448AFF)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -81,12 +66,14 @@ class AboutScreen extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               Env.appName,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              style: Theme.of(context).textTheme.headlineMedium,
             ),
             const SizedBox(height: 4),
             Text(
               'Version ${Env.appVersion}',
-              style: TextStyle(color: Colors.grey[500]),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -95,7 +82,7 @@ class AboutScreen extends StatelessWidget {
                 'Enjoy local and international stations with crystal clear sound and '
                 'premium features like offline downloads and ad-free listening.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 15, height: 1.5),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.5),
               ),
             ),
             const Divider(),
@@ -172,7 +159,7 @@ class AboutScreen extends StatelessWidget {
             const SizedBox(height: 40),
             Text(
               '© 2025 ${Env.appName}. All Rights Reserved.',
-              style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Colors.grey[500]),
             ),
             const SizedBox(height: 20),
           ],
@@ -191,7 +178,10 @@ class AboutScreen extends StatelessWidget {
   }) {
     return ListTile(
       leading: Icon(icon, color: iconColor),
-      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w500)),
+      title: Text(
+        label,
+        style: Theme.of(context).textTheme.titleSmall,
+      ),
       subtitle: Text(
         value,
         style: TextStyle(

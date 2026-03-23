@@ -1,5 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+
+Future<void>? _adsInitFuture;
+
+Future<void> _ensureAdsInitialized() async {
+  _adsInitFuture ??= MobileAds.instance.initialize();
+  try {
+    await _adsInitFuture;
+  } catch (e) {
+    // Allow a future retry if Play services temporarily restarts.
+    _adsInitFuture = null;
+    rethrow;
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Ad Unit IDs — replace test IDs with real AdMob IDs before release.
@@ -54,7 +69,13 @@ class _BannerAdWidgetState extends State<BannerAdWidget> {
     }
   }
 
-  void _loadAd() {
+  Future<void> _loadAd() async {
+    try {
+      await _ensureAdsInitialized();
+    } catch (e) {
+      debugPrint('BannerAd init failed: $e');
+    }
+    if (!mounted) return;
     // Theme.of(context) is safe here — called from didChangeDependencies.
     final isIos = Theme.of(context).platform == TargetPlatform.iOS;
     final adUnitId = isIos ? AdUnitIds.bannerIos : AdUnitIds.bannerAndroid;
@@ -119,6 +140,9 @@ class _NativeInFeedAdTileState extends State<NativeInFeedAdTile> {
   NativeAd? _nativeAd;
   bool _isLoaded   = false;
   bool _loadCalled = false;
+  int _loadAttempts = 0;
+  static const int _maxLoadAttempts = 10;
+  Timer? _retryTimer;
 
   @override
   void initState() {
@@ -135,7 +159,17 @@ class _NativeInFeedAdTileState extends State<NativeInFeedAdTile> {
     }
   }
 
-  void _loadAd() {
+  Future<void> _loadAd() async {
+    _retryTimer?.cancel();
+    if (_loadAttempts >= _maxLoadAttempts) return;
+    _loadAttempts++;
+    try {
+      await _ensureAdsInitialized();
+    } catch (e) {
+      debugPrint('NativeAd init failed: $e');
+    }
+    if (!mounted) return;
+
     final isIos = Theme.of(context).platform == TargetPlatform.iOS;
     final adUnitId = isIos ? AdUnitIds.nativeIos : AdUnitIds.nativeAndroid;
 
@@ -145,6 +179,7 @@ class _NativeInFeedAdTileState extends State<NativeInFeedAdTile> {
       request: const AdRequest(),
       listener: NativeAdListener(
         onAdLoaded: (_) {
+          _loadAttempts = 0;
           if (mounted) setState(() => _isLoaded = true);
         },
         onAdFailedToLoad: (ad, error) {
@@ -152,6 +187,9 @@ class _NativeInFeedAdTileState extends State<NativeInFeedAdTile> {
           _nativeAd = null;
           if (mounted) setState(() => _isLoaded = false);
           debugPrint('NativeAd failed: $error');
+          if (!mounted) return;
+          final delayMs = 700 * _loadAttempts; // simple backoff
+          _retryTimer = Timer(Duration(milliseconds: delayMs), _loadAd);
         },
       ),
     )..load();
@@ -159,6 +197,7 @@ class _NativeInFeedAdTileState extends State<NativeInFeedAdTile> {
 
   @override
   void dispose() {
+    _retryTimer?.cancel();
     _nativeAd?.dispose();
     super.dispose();
   }
@@ -238,7 +277,10 @@ class InterstitialAdManager {
           _interstitialAd   = ad;
           _isReady          = true;
           _numLoadAttempts  = 0;
-          _interstitialAd!.setImmersiveMode(true);
+          // Avoid calling setImmersiveMode(true) here.
+          // On some plugin versions/devices it can crash with:
+          // "Attempt to invoke ... setImmersiveMode(boolean) on a null object reference".
+          // Immersive mode is not critical for app stability.
           _interstitialAd!.fullScreenContentCallback =
               FullScreenContentCallback(
             onAdDismissedFullScreenContent: (ad) {

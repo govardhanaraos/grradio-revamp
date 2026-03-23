@@ -81,8 +81,11 @@ class DownloadManagerScreen extends StatelessWidget {
                     children: [
                       LinearProgressIndicator(
                         value: progress > 0 ? progress / 100 : null,
-                        backgroundColor: Colors.grey.shade200,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                        backgroundColor:
+                            Theme.of(context).colorScheme.surfaceContainerHighest,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Theme.of(context).colorScheme.primary,
+                        ),
                       ),
                       const SizedBox(height: 4),
                       Text(
