@@ -166,6 +166,10 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
 
   Set<String> _favouriteIds = {};
   static const _prefsKey = 'favourite_station_ids';
+  static const _recentPrefsKey = 'recent_station_ids';
+  static const _lastPlayedPrefsKey = 'last_played_station_id';
+  final List<String> _recentStationIds = [];
+  bool _didAutoResume = false;
 
   // Cached SharedPreferences instance — avoids getInstance() on every tap.
   SharedPreferences? _prefs;
@@ -387,6 +391,29 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
       _forYouStations = forYou;
       _trendingStations = trending;
     });
+    _tryAutoResumeLastStation(all);
+  }
+
+  Future<void> _tryAutoResumeLastStation(List<RadioStation> all) async {
+    if (_didAutoResume || all.isEmpty) return;
+    final prefs = await _sharedPrefs;
+    final lastId = prefs.getString(_lastPlayedPrefsKey);
+    if (lastId == null || lastId.isEmpty) return;
+    final alreadyPlaying = _currentMediaIdVN.value;
+    if (alreadyPlaying != null && alreadyPlaying.isNotEmpty) {
+      _didAutoResume = true;
+      return;
+    }
+    RadioStation? target;
+    for (final s in all) {
+      if (s.id == lastId) {
+        target = s;
+        break;
+      }
+    }
+    if (target == null) return;
+    _didAutoResume = true;
+    _playStation(target, rememberRecent: false);
   }
 
   void _onScroll() {
@@ -417,7 +444,15 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
   Future<void> _loadFavourites() async {
     final prefs = await _sharedPrefs;
     final saved = prefs.getStringList(_prefsKey) ?? [];
-    if (mounted) setState(() => _favouriteIds = saved.toSet());
+    final recent = prefs.getStringList(_recentPrefsKey) ?? [];
+    if (mounted) {
+      setState(() {
+        _favouriteIds = saved.toSet();
+        _recentStationIds
+          ..clear()
+          ..addAll(recent);
+      });
+    }
   }
 
   Future<void> _toggleFavourite(RadioStation station) async {
@@ -446,9 +481,23 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
     );
   }
 
-  void _playStation(RadioStation station) {
+  Future<void> _rememberRecentStation(RadioStation station) async {
+    final prefs = await _sharedPrefs;
+    _recentStationIds.remove(station.id);
+    _recentStationIds.insert(0, station.id);
+    if (_recentStationIds.length > 10) {
+      _recentStationIds.removeRange(10, _recentStationIds.length);
+    }
+    await prefs.setStringList(_recentPrefsKey, _recentStationIds);
+    await prefs.setString(_lastPlayedPrefsKey, station.id);
+  }
+
+  void _playStation(RadioStation station, {bool rememberRecent = true}) {
     HapticFeedback.lightImpact();
     globalRadioAudioHandler.playFromMediaId(station.id);
+    if (rememberRecent) {
+      _rememberRecentStation(station);
+    }
     if (_showInterstitial) {
       _stationTapCount++;
       if (_stationTapCount % _interstitialEvery == 0) {
