@@ -4,6 +4,7 @@ import 'package:grradio/masstamilan/data/massteluguservice.dart';
 import 'package:grradio/masstamilan/presentation/albumdetailsview.dart';
 import 'package:grradio/api/analytics_service_api.dart';
 import 'package:grradio/main.dart';
+import 'package:grradio/l10n/app_localizations.dart';
 
 class AlbumListPage extends StatefulWidget {
   final String language;
@@ -88,7 +89,7 @@ class _AlbumListPageState extends State<AlbumListPage> {
                   ),
                 ),
               )
-            : const Text('Latest Telugu Albums'),
+            : Text(AppLocalizations.of(context)!.masstamilanTitle),
 
         actions: [
           if (!_isSearching)

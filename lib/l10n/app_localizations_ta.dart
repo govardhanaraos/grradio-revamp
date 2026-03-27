@@ -203,4 +203,164 @@ class AppLocalizationsTa extends AppLocalizations {
 
   @override
   String get languageHindi => 'हिन्दी (Hindi)';
+
+  @override
+  String get buttonCancel => 'రద్దు';
+
+  @override
+  String get buttonDelete => 'நீக்கு';
+
+  @override
+  String get buttonRename => 'மறுபெயரிடு';
+
+  @override
+  String get buttonOk => 'சரி';
+
+  @override
+  String get buttonOverwrite => 'மேலெழுது';
+
+  @override
+  String get buttonTryAgain => 'மீண்டும் முயற்சிக்கவும்';
+
+  @override
+  String get buttonAllow => 'அனுமதி';
+
+  @override
+  String get buttonOpenSettings => 'அமைப்புகளை திற';
+
+  @override
+  String get buttonGrantPermission => 'அனுமதி வழங்கவும்';
+
+  @override
+  String get mp3DeleteFilesTitle => 'கோப்புகளை நீக்கு';
+
+  @override
+  String get mp3DeleteFileTitle => 'கோப்பை நீக்கு';
+
+  @override
+  String mp3DeleteFileConfirm(String name) {
+    return '\"$name\" ஐ நீக்கவா? இதை மீட்டெடுக்க முடியாது.';
+  }
+
+  @override
+  String get sleepIn10 => '10 நிமிடங்களில் தூக்கம்';
+
+  @override
+  String get sleepIn20 => '20 நிமிடங்களில் தூக்கம்';
+
+  @override
+  String get sleepIn30 => '30 நிமிடங்களில் தூக்கம்';
+
+  @override
+  String get sleepIn45 => '45 நிமிடங்களில் தூக்கம்';
+
+  @override
+  String get sleepIn60 => '60 நிமிடங்களில் தூக்கம்';
+
+  @override
+  String get sleepCancel => 'தூக்கம் டைமரை ரத்து செய்';
+
+  @override
+  String get recordingNameHint => 'பதிவு பெயர்';
+
+  @override
+  String get emptyNoMusicTitle => 'இசை கிடைக்கவில்லை';
+
+  @override
+  String get emptyNoMusicSubtitle =>
+      'MP3 கோப்புகளுக்கு உங்கள் சாதன சேமிப்பை சரிபார்க்கவும்.';
+
+  @override
+  String get emptyNoDownloadsTitle => 'பதிவிறக்கங்கள் இல்லை';
+
+  @override
+  String get emptyNoDownloadsSubtitle =>
+      'நீங்கள் பதிவிறக்கும் பாடல்கள் இங்கே தோன்றும்.';
+
+  @override
+  String get emptyNoRecordingsTitle => 'பதிவுகள் இல்லை';
+
+  @override
+  String get emptyNoRecordingsSubtitle =>
+      'உங்கள் ரேடியோ பதிவுகள் இங்கே சேமிக்கப்படும்.';
+
+  @override
+  String get searchSongsHint => 'பாடல்களைத் தேடுங்கள்...';
+
+  @override
+  String get searchDownloadsHint => 'பதிவிறக்கங்களைத் தேடுங்கள்...';
+
+  @override
+  String get searchRecordingsHint => 'பதிவுகளைத் தேடுங்கள்...';
+
+  @override
+  String get deleteLabel => 'நீக்கு';
+
+  @override
+  String get permissionStorageTitle => 'சேமிப்பக அனுமதி தேவை';
+
+  @override
+  String get permissionRequiredTitle => 'அனுமதி தேவை';
+
+  @override
+  String get downloadCompleteTitle => 'பதிவிறக்கம் முடிந்தது';
+
+  @override
+  String downloadFileLabel(String name) {
+    return 'கோப்பு: $name';
+  }
+
+  @override
+  String downloadSizeLabel(String size) {
+    return 'அளவு: $size';
+  }
+
+  @override
+  String get fileExistsTitle => 'கோப்பு உள்ளது';
+
+  @override
+  String get tabAlbumsFolders => 'ஆல்பங்கள்/கோப்புறைகள்';
+
+  @override
+  String get tabIndividualFiles => 'தனிப்பட்ட கோப்புகள்';
+
+  @override
+  String get masstamilanTitle => 'சமீபத்திய தெலுங்கு ஆல்பங்கள்';
+
+  @override
+  String get stopRecordingBeforeSwitch =>
+      'தாவல்களை மாற்றுவதற்கு முன் பதிவை நிறுத்துங்கள்.';
+
+  @override
+  String get mp3DownloadSearchHint => 'திரைப்பட பெயர், பாடல், கலைஞர்.';
+
+  @override
+  String get aiAssistant => 'செயற்கை நுண்ணறிவு உதவியாளர்';
+
+  @override
+  String get aiAssistantSubtitle =>
+      'எங்கள் AI இலிருந்து உடனடி உதவியைப் பெறுங்கள்';
+
+  @override
+  String get aiChatHint => 'ஒரு செய்தியை தட்டச்சு செய்க...';
+
+  @override
+  String get aiTyping => 'AI தட்டச்சு செய்கிறது...';
+
+  @override
+  String get aiClearChat => 'அரட்டையை அழி';
+
+  @override
+  String get aiClearConfirm =>
+      'அரட்டை வரலாற்றை அழிக்க நிச்சயமாக விரும்புகிறீர்களா?';
+
+  @override
+  String get aiContactHuman => 'மனித ஆதரவைத் தொடர்புகொள்ளவும்';
+
+  @override
+  String get aiWelcome =>
+      'வணக்கம்! நான் ஜி.ஆர் ரேடியோவின் AI உதவியாளர். நான் உங்களுக்கு எப்படி உதவ முடியும்?';
+
+  @override
+  String get aiError => 'பதிலைப் பெறுவதில் தோல்வி, மீண்டும் முயற்சிக்கவும்.';
 }

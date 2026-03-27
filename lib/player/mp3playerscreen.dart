@@ -15,6 +15,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:grradio/l10n/app_localizations.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Models
@@ -667,14 +668,14 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Delete files'),
+        title: Text(AppLocalizations.of(context)!.mp3DeleteFilesTitle),
         content: Text(
           'Delete $count selected file${count > 1 ? 's' : ''}? This cannot be undone.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)!.buttonCancel),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -685,7 +686,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
               ),
             ),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('DELETE'),
+            child: Text(AppLocalizations.of(context)!.buttonDelete),
           ),
         ],
       ),
@@ -827,32 +828,32 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
           children: [
             ListTile(
               leading: const Icon(Icons.timer_10_rounded),
-              title: const Text('Sleep in 10 minutes'),
+              title: Text(AppLocalizations.of(context)!.sleepIn10),
               onTap: () => _setSleepFromPreset(10),
             ),
             ListTile(
               leading: const Icon(Icons.timer_10_rounded),
-              title: const Text('Sleep in 20 minutes'),
+              title: Text(AppLocalizations.of(context)!.sleepIn20),
               onTap: () => _setSleepFromPreset(20),
             ),
             ListTile(
               leading: const Icon(Icons.timer_10_rounded),
-              title: const Text('Sleep in 30 minutes'),
+              title: Text(AppLocalizations.of(context)!.sleepIn30),
               onTap: () => _setSleepFromPreset(30),
             ),
             ListTile(
               leading: const Icon(Icons.timer_10_rounded),
-              title: const Text('Sleep in 45 minutes'),
+              title: Text(AppLocalizations.of(context)!.sleepIn45),
               onTap: () => _setSleepFromPreset(45),
             ),
             ListTile(
               leading: const Icon(Icons.timer_10_rounded),
-              title: const Text('Sleep in 60 minutes'),
+              title: Text(AppLocalizations.of(context)!.sleepIn60),
               onTap: () => _setSleepFromPreset(60),
             ),
             ListTile(
               leading: const Icon(Icons.timer_off_rounded),
-              title: const Text('Cancel sleep timer'),
+              title: Text(AppLocalizations.of(context)!.sleepCancel),
               onTap: () async {
                 Navigator.pop(context);
                 await globalRadioAudioHandler.cancelSleepTimer();
@@ -917,7 +918,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
               controller: ctrl,
               autofocus: true,
               decoration: InputDecoration(
-                hintText: 'Recording name',
+                hintText: AppLocalizations.of(ctx)!.recordingNameHint,
                 filled: true,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -936,7 +937,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: const Text('Cancel'),
+                    child: Text(AppLocalizations.of(ctx)!.buttonCancel),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -950,7 +951,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    child: const Text('Rename'),
+                    child: Text(AppLocalizations.of(ctx)!.buttonRename),
                   ),
                 ),
               ],
@@ -1015,12 +1016,12 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Delete file'),
-        content: Text('Delete "${_titleOf(file)}"? This cannot be undone.'),
+        title: Text(AppLocalizations.of(context)!.mp3DeleteFileTitle),
+        content: Text(AppLocalizations.of(context)!.mp3DeleteFileConfirm(_titleOf(file))),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)!.buttonCancel),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -1031,7 +1032,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
               ),
             ),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('DELETE'),
+            child: Text(AppLocalizations.of(context)!.buttonDelete),
           ),
         ],
       ),
@@ -1184,8 +1185,8 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
         isRec: false,
         isDl: false,
         emptyIcon: Icons.music_note_outlined,
-        emptyTitle: 'No Music Found',
-        emptySubtitle: 'Check your device storage for MP3 files.',
+        emptyTitle: AppLocalizations.of(context)!.emptyNoMusicTitle,
+        emptySubtitle: AppLocalizations.of(context)!.emptyNoMusicSubtitle,
         onRefresh: _loadAllSongs,
         emptyIconSz: emptyIconSz,
         emptyTitleSz: emptyTitleSz,
@@ -1198,8 +1199,8 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
         isRec: false,
         isDl: true,
         emptyIcon: Icons.download_for_offline_outlined,
-        emptyTitle: 'No Downloads',
-        emptySubtitle: 'Songs you download will appear here.',
+        emptyTitle: AppLocalizations.of(context)!.emptyNoDownloadsTitle,
+        emptySubtitle: AppLocalizations.of(context)!.emptyNoDownloadsSubtitle,
         onRefresh: _loadDownloadedMp3s,
         emptyIconSz: emptyIconSz,
         emptyTitleSz: emptyTitleSz,
@@ -1212,8 +1213,8 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
         isRec: true,
         isDl: false,
         emptyIcon: Icons.mic_none_outlined,
-        emptyTitle: 'No Recordings',
-        emptySubtitle: 'Your radio recordings will be saved here.',
+        emptyTitle: AppLocalizations.of(context)!.emptyNoRecordingsTitle,
+        emptySubtitle: AppLocalizations.of(context)!.emptyNoRecordingsSubtitle,
         onRefresh: _loadLocalRecordings,
         emptyIconSz: emptyIconSz,
         emptyTitleSz: emptyTitleSz,
@@ -1654,7 +1655,11 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                   : cs.onSurfaceVariant,
               size: 18,
             ),
-            hintText: 'Search ${['songs', 'downloads', 'recordings'][tab]}...',
+            hintText: [
+                AppLocalizations.of(context)!.searchSongsHint,
+                AppLocalizations.of(context)!.searchDownloadsHint,
+                AppLocalizations.of(context)!.searchRecordingsHint,
+              ][tab],
             hintStyle: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
             border: InputBorder.none,
             suffixIcon: _searchQueries[tab].isNotEmpty
@@ -1694,14 +1699,14 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
               size: 18,
               color: Colors.red,
             ),
-            label: const Text('Delete', style: TextStyle(color: Colors.red)),
+            label: Text(AppLocalizations.of(context)!.deleteLabel, style: const TextStyle(color: Colors.red)),
           ),
         TextButton(
           onPressed: () => setState(() {
             _isSelecting = false;
             _selectedIds.clear();
           }),
-          child: const Text('Cancel'),
+          child: Text(AppLocalizations.of(context)!.buttonCancel),
         ),
       ],
     ),
@@ -1898,13 +1903,13 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(18),
                                 ),
-                                title: const Text('Delete File'),
+                                title: Text(AppLocalizations.of(context)!.mp3DeleteFileTitle),
                                 content: Text(
                                   'Delete "$title"? This cannot be undone.',
                                 ),
                                 actions: [
                                   TextButton(
-                                    child: const Text('Cancel'),
+                                    child: Text(AppLocalizations.of(context)!.buttonCancel),
                                     onPressed: () =>
                                         Navigator.of(context).pop(false),
                                   ),
@@ -1916,7 +1921,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
                                         borderRadius: BorderRadius.circular(10),
                                       ),
                                     ),
-                                    child: const Text('DELETE'),
+                                    child: Text(AppLocalizations.of(context)!.buttonDelete),
                                     onPressed: () =>
                                         Navigator.of(context).pop(true),
                                   ),
@@ -2298,7 +2303,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
           ElevatedButton.icon(
             onPressed: _checkAndRequestPermissions,
             icon: Icon(Icons.security, size: iS * 0.8),
-            label: Text('Grant Permission', style: TextStyle(fontSize: eSuS)),
+            label: Text(AppLocalizations.of(context)!.buttonGrantPermission, style: TextStyle(fontSize: eSuS)),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF7C4DFF),
               foregroundColor: Colors.white,
@@ -2314,7 +2319,7 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
           SizedBox(height: sh * 0.02),
           TextButton(
             onPressed: openAppSettings,
-            child: Text('Open Settings', style: TextStyle(fontSize: eSuS)),
+            child: Text(AppLocalizations.of(context)!.buttonOpenSettings, style: TextStyle(fontSize: eSuS)),
           ),
         ],
       ),

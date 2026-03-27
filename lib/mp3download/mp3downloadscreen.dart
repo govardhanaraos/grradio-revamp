@@ -20,6 +20,7 @@ import 'package:grradio/main.dart';
 import '../main.dart';
 import '../more/theme_provider.dart';
 import '../theme/app_theme_context.dart';
+import 'package:grradio/l10n/app_localizations.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Remote config models
@@ -761,7 +762,7 @@ class _Mp3DownloadScreenState extends State<Mp3DownloadScreen>
                   onSubmitted: (_) => _searchMp3(),
                   textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
-                    hintText: 'Movie name, song, artist…',
+                    hintText: AppLocalizations.of(context)!.mp3DownloadSearchHint,
                     hintStyle: TextStyle(
                       color: context.appOnSurfaceMuted.withValues(alpha: 0.55),
                       fontSize: 14,

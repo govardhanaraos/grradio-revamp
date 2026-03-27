@@ -194,5 +194,72 @@
   "@languageKannada": {},
 
   "languageHindi": "हिन्दी (Hindi)",
-  "@languageHindi": {}
+  "@languageHindi": {},
+
+  "buttonCancel": "Cancel",
+  "buttonDelete": "DELETE",
+  "buttonRename": "Rename",
+  "buttonOk": "OK",
+  "buttonOverwrite": "Overwrite",
+  "buttonTryAgain": "Try Again",
+  "buttonAllow": "Allow",
+  "buttonOpenSettings": "Open Settings",
+  "buttonGrantPermission": "Grant Permission",
+
+  "mp3DeleteFilesTitle": "Delete files",
+  "mp3DeleteFileTitle": "Delete file",
+  "mp3DeleteFileConfirm": "Delete \"{name}\"? This cannot be undone.",
+  "@mp3DeleteFileConfirm": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+
+  "sleepIn10": "Sleep in 10 minutes",
+  "sleepIn20": "Sleep in 20 minutes",
+  "sleepIn30": "Sleep in 30 minutes",
+  "sleepIn45": "Sleep in 45 minutes",
+  "sleepIn60": "Sleep in 60 minutes",
+  "sleepCancel": "Cancel sleep timer",
+
+  "recordingNameHint": "Recording name",
+
+  "emptyNoMusicTitle": "No Music Found",
+  "emptyNoMusicSubtitle": "Check your device storage for MP3 files.",
+  "emptyNoDownloadsTitle": "No Downloads",
+  "emptyNoDownloadsSubtitle": "Songs you download will appear here.",
+  "emptyNoRecordingsTitle": "No Recordings",
+  "emptyNoRecordingsSubtitle": "Your radio recordings will be saved here.",
+
+  "searchSongsHint": "Search songs...",
+  "searchDownloadsHint": "Search downloads...",
+  "searchRecordingsHint": "Search recordings...",
+  "deleteLabel": "Delete",
+
+  "permissionStorageTitle": "Storage Permission Required",
+  "permissionRequiredTitle": "Permission Required",
+
+  "downloadCompleteTitle": "Download Complete",
+  "downloadFileLabel": "File: {name}",
+  "@downloadFileLabel": {
+    "placeholders": { "name": { "type": "String" } }
+  },
+  "downloadSizeLabel": "Size: {size}",
+  "@downloadSizeLabel": {
+    "placeholders": { "size": { "type": "String" } }
+  },
+
+  "fileExistsTitle": "File Exists",
+  "tabAlbumsFolders": "Albums/Folders",
+  "tabIndividualFiles": "Individual Files",
+  "masstamilanTitle": "Latest Telugu Albums",
+  "stopRecordingBeforeSwitch": "Stop recording before switching tabs.",
+  "mp3DownloadSearchHint": "Movie name, song, artist.",
+  "aiAssistant": "AI Assistant",
+  "aiAssistantSubtitle": "Get instant help from our AI",
+  "aiChatHint": "Type a message...",
+  "aiTyping": "AI is typing...",
+  "aiClearChat": "Clear Chat",
+  "aiClearConfirm": "Are you sure you want to clear chat history?",
+  "aiContactHuman": "Contact Human Support",
+  "aiWelcome": "Hi! I'm GR Radio's AI assistant. How can I help you today?",
+  "aiError": "Failed to get response, please try again."
 }

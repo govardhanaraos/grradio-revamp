@@ -199,4 +199,160 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get languageHindi => 'हिन्दी (Hindi)';
+
+  @override
+  String get buttonCancel => 'Cancel';
+
+  @override
+  String get buttonDelete => 'DELETE';
+
+  @override
+  String get buttonRename => 'Rename';
+
+  @override
+  String get buttonOk => 'OK';
+
+  @override
+  String get buttonOverwrite => 'Overwrite';
+
+  @override
+  String get buttonTryAgain => 'Try Again';
+
+  @override
+  String get buttonAllow => 'Allow';
+
+  @override
+  String get buttonOpenSettings => 'Open Settings';
+
+  @override
+  String get buttonGrantPermission => 'Grant Permission';
+
+  @override
+  String get mp3DeleteFilesTitle => 'Delete files';
+
+  @override
+  String get mp3DeleteFileTitle => 'Delete file';
+
+  @override
+  String mp3DeleteFileConfirm(String name) {
+    return 'Delete \"$name\"? This cannot be undone.';
+  }
+
+  @override
+  String get sleepIn10 => 'Sleep in 10 minutes';
+
+  @override
+  String get sleepIn20 => 'Sleep in 20 minutes';
+
+  @override
+  String get sleepIn30 => 'Sleep in 30 minutes';
+
+  @override
+  String get sleepIn45 => 'Sleep in 45 minutes';
+
+  @override
+  String get sleepIn60 => 'Sleep in 60 minutes';
+
+  @override
+  String get sleepCancel => 'Cancel sleep timer';
+
+  @override
+  String get recordingNameHint => 'Recording name';
+
+  @override
+  String get emptyNoMusicTitle => 'No Music Found';
+
+  @override
+  String get emptyNoMusicSubtitle => 'Check your device storage for MP3 files.';
+
+  @override
+  String get emptyNoDownloadsTitle => 'No Downloads';
+
+  @override
+  String get emptyNoDownloadsSubtitle => 'Songs you download will appear here.';
+
+  @override
+  String get emptyNoRecordingsTitle => 'No Recordings';
+
+  @override
+  String get emptyNoRecordingsSubtitle =>
+      'Your radio recordings will be saved here.';
+
+  @override
+  String get searchSongsHint => 'Search songs...';
+
+  @override
+  String get searchDownloadsHint => 'Search downloads...';
+
+  @override
+  String get searchRecordingsHint => 'Search recordings...';
+
+  @override
+  String get deleteLabel => 'Delete';
+
+  @override
+  String get permissionStorageTitle => 'Storage Permission Required';
+
+  @override
+  String get permissionRequiredTitle => 'Permission Required';
+
+  @override
+  String get downloadCompleteTitle => 'Download Complete';
+
+  @override
+  String downloadFileLabel(String name) {
+    return 'File: $name';
+  }
+
+  @override
+  String downloadSizeLabel(String size) {
+    return 'Size: $size';
+  }
+
+  @override
+  String get fileExistsTitle => 'File Exists';
+
+  @override
+  String get tabAlbumsFolders => 'Albums/Folders';
+
+  @override
+  String get tabIndividualFiles => 'Individual Files';
+
+  @override
+  String get masstamilanTitle => 'Latest Telugu Albums';
+
+  @override
+  String get stopRecordingBeforeSwitch =>
+      'Stop recording before switching tabs.';
+
+  @override
+  String get mp3DownloadSearchHint => 'Movie name, song, artist.';
+
+  @override
+  String get aiAssistant => 'AI Assistant';
+
+  @override
+  String get aiAssistantSubtitle => 'Get instant help from our AI';
+
+  @override
+  String get aiChatHint => 'Type a message...';
+
+  @override
+  String get aiTyping => 'AI is typing...';
+
+  @override
+  String get aiClearChat => 'Clear Chat';
+
+  @override
+  String get aiClearConfirm => 'Are you sure you want to clear chat history?';
+
+  @override
+  String get aiContactHuman => 'Contact Human Support';
+
+  @override
+  String get aiWelcome =>
+      'Hi! I\'m GR Radio\'s AI assistant. How can I help you today?';
+
+  @override
+  String get aiError => 'Failed to get response, please try again.';
 }

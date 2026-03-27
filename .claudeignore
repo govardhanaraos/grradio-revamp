@@ -1,0 +1,108 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+build/
+.packages
+
+# Flutter generated files
+.flutter-plugins
+pubspec.lock
+
+# iOS build artifacts
+ios/Flutter/Flutter.framework/
+ios/Flutter/Flutter.podspec
+ios/ServiceDefinitions.json
+ios/Runner/GeneratedPluginRegistrant.*
+
+# macOS build artifacts
+macos/Flutter/GeneratedPluginRegistrant.swift
+
+# Web build artifacts
+web/.dart_tool/
+web/.idea/
+web/.vscode/
+
+# Windows build artifacts
+windows/Flutter/GeneratedPluginRegistrant.*
+
+# Linux build artifacts
+linux/Flutter/GeneratedPluginRegistrant.*
+
+# VS Code local history
+.vscode/
+.history/
+
+
+# Temporary files
+*.tmp
+*.temp
+
+
+# Gradle cache
+android/.gradle/
+
+# Web build artifacts
+build/web/
+
+linux
+
+macos
+ios
+test
+web_1
+web
+windows
+.dart_tool
+build
+
+# Ignore heavy Flutter/Dart folders
+.dart_tool/
+build/
+ios/
+android/
+.pub-cache/
+*.lock
+.git/

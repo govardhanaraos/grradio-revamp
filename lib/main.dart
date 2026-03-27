@@ -809,7 +809,7 @@ class _MainNavigatorState extends State<MainNavigator> {
     if (_isRecording) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Stop recording before switching tabs.'),
+          content: Text(AppLocalizations.of(context)!.stopRecordingBeforeSwitch),
           backgroundColor: Colors.red.shade700,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),

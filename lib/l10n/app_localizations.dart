@@ -471,6 +471,300 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'हिन्दी (Hindi)'**
   String get languageHindi;
+
+  /// No description provided for @buttonCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get buttonCancel;
+
+  /// No description provided for @buttonDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'DELETE'**
+  String get buttonDelete;
+
+  /// No description provided for @buttonRename.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get buttonRename;
+
+  /// No description provided for @buttonOk.
+  ///
+  /// In en, this message translates to:
+  /// **'OK'**
+  String get buttonOk;
+
+  /// No description provided for @buttonOverwrite.
+  ///
+  /// In en, this message translates to:
+  /// **'Overwrite'**
+  String get buttonOverwrite;
+
+  /// No description provided for @buttonTryAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Try Again'**
+  String get buttonTryAgain;
+
+  /// No description provided for @buttonAllow.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow'**
+  String get buttonAllow;
+
+  /// No description provided for @buttonOpenSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Settings'**
+  String get buttonOpenSettings;
+
+  /// No description provided for @buttonGrantPermission.
+  ///
+  /// In en, this message translates to:
+  /// **'Grant Permission'**
+  String get buttonGrantPermission;
+
+  /// No description provided for @mp3DeleteFilesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete files'**
+  String get mp3DeleteFilesTitle;
+
+  /// No description provided for @mp3DeleteFileTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete file'**
+  String get mp3DeleteFileTitle;
+
+  /// No description provided for @mp3DeleteFileConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete \"{name}\"? This cannot be undone.'**
+  String mp3DeleteFileConfirm(String name);
+
+  /// No description provided for @sleepIn10.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep in 10 minutes'**
+  String get sleepIn10;
+
+  /// No description provided for @sleepIn20.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep in 20 minutes'**
+  String get sleepIn20;
+
+  /// No description provided for @sleepIn30.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep in 30 minutes'**
+  String get sleepIn30;
+
+  /// No description provided for @sleepIn45.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep in 45 minutes'**
+  String get sleepIn45;
+
+  /// No description provided for @sleepIn60.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep in 60 minutes'**
+  String get sleepIn60;
+
+  /// No description provided for @sleepCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel sleep timer'**
+  String get sleepCancel;
+
+  /// No description provided for @recordingNameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Recording name'**
+  String get recordingNameHint;
+
+  /// No description provided for @emptyNoMusicTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No Music Found'**
+  String get emptyNoMusicTitle;
+
+  /// No description provided for @emptyNoMusicSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your device storage for MP3 files.'**
+  String get emptyNoMusicSubtitle;
+
+  /// No description provided for @emptyNoDownloadsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No Downloads'**
+  String get emptyNoDownloadsTitle;
+
+  /// No description provided for @emptyNoDownloadsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Songs you download will appear here.'**
+  String get emptyNoDownloadsSubtitle;
+
+  /// No description provided for @emptyNoRecordingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No Recordings'**
+  String get emptyNoRecordingsTitle;
+
+  /// No description provided for @emptyNoRecordingsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Your radio recordings will be saved here.'**
+  String get emptyNoRecordingsSubtitle;
+
+  /// No description provided for @searchSongsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search songs...'**
+  String get searchSongsHint;
+
+  /// No description provided for @searchDownloadsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search downloads...'**
+  String get searchDownloadsHint;
+
+  /// No description provided for @searchRecordingsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search recordings...'**
+  String get searchRecordingsHint;
+
+  /// No description provided for @deleteLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get deleteLabel;
+
+  /// No description provided for @permissionStorageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Storage Permission Required'**
+  String get permissionStorageTitle;
+
+  /// No description provided for @permissionRequiredTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission Required'**
+  String get permissionRequiredTitle;
+
+  /// No description provided for @downloadCompleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Download Complete'**
+  String get downloadCompleteTitle;
+
+  /// No description provided for @downloadFileLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'File: {name}'**
+  String downloadFileLabel(String name);
+
+  /// No description provided for @downloadSizeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Size: {size}'**
+  String downloadSizeLabel(String size);
+
+  /// No description provided for @fileExistsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'File Exists'**
+  String get fileExistsTitle;
+
+  /// No description provided for @tabAlbumsFolders.
+  ///
+  /// In en, this message translates to:
+  /// **'Albums/Folders'**
+  String get tabAlbumsFolders;
+
+  /// No description provided for @tabIndividualFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Individual Files'**
+  String get tabIndividualFiles;
+
+  /// No description provided for @masstamilanTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Latest Telugu Albums'**
+  String get masstamilanTitle;
+
+  /// No description provided for @stopRecordingBeforeSwitch.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop recording before switching tabs.'**
+  String get stopRecordingBeforeSwitch;
+
+  /// No description provided for @mp3DownloadSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Movie name, song, artist.'**
+  String get mp3DownloadSearchHint;
+
+  /// No description provided for @aiAssistant.
+  ///
+  /// In en, this message translates to:
+  /// **'AI Assistant'**
+  String get aiAssistant;
+
+  /// No description provided for @aiAssistantSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Get instant help from our AI'**
+  String get aiAssistantSubtitle;
+
+  /// No description provided for @aiChatHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Type a message...'**
+  String get aiChatHint;
+
+  /// No description provided for @aiTyping.
+  ///
+  /// In en, this message translates to:
+  /// **'AI is typing...'**
+  String get aiTyping;
+
+  /// No description provided for @aiClearChat.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear Chat'**
+  String get aiClearChat;
+
+  /// No description provided for @aiClearConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to clear chat history?'**
+  String get aiClearConfirm;
+
+  /// No description provided for @aiContactHuman.
+  ///
+  /// In en, this message translates to:
+  /// **'Contact Human Support'**
+  String get aiContactHuman;
+
+  /// No description provided for @aiWelcome.
+  ///
+  /// In en, this message translates to:
+  /// **'Hi! I\'m GR Radio\'s AI assistant. How can I help you today?'**
+  String get aiWelcome;
+
+  /// No description provided for @aiError.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to get response, please try again.'**
+  String get aiError;
 }
 
 class _AppLocalizationsDelegate

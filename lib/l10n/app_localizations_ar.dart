@@ -197,4 +197,159 @@ class AppLocalizationsAr extends AppLocalizations {
 
   @override
   String get languageHindi => 'हिन्दी (Hindi)';
+
+  @override
+  String get buttonCancel => 'إلغاء';
+
+  @override
+  String get buttonDelete => 'حذف';
+
+  @override
+  String get buttonRename => 'إعادة التسمية';
+
+  @override
+  String get buttonOk => 'موافق';
+
+  @override
+  String get buttonOverwrite => 'استبدال';
+
+  @override
+  String get buttonTryAgain => 'حاول مرة أخرى';
+
+  @override
+  String get buttonAllow => 'سماح';
+
+  @override
+  String get buttonOpenSettings => 'فتح الإعدادات';
+
+  @override
+  String get buttonGrantPermission => 'منح الإذن';
+
+  @override
+  String get mp3DeleteFilesTitle => 'حذف الملفات';
+
+  @override
+  String get mp3DeleteFileTitle => 'حذف الملف';
+
+  @override
+  String mp3DeleteFileConfirm(String name) {
+    return 'هل تريد حذف \"$name\"؟ لا يمكن التراجع عن هذا.';
+  }
+
+  @override
+  String get sleepIn10 => 'النوم في 10 دقائق';
+
+  @override
+  String get sleepIn20 => 'النوم في 20 دقيقة';
+
+  @override
+  String get sleepIn30 => 'النوم في 30 دقيقة';
+
+  @override
+  String get sleepIn45 => 'النوم في 45 دقيقة';
+
+  @override
+  String get sleepIn60 => 'النوم في 60 دقيقة';
+
+  @override
+  String get sleepCancel => 'إلغاء مؤقت النوم';
+
+  @override
+  String get recordingNameHint => 'اسم التسجيل';
+
+  @override
+  String get emptyNoMusicTitle => 'لم يتم العثور على موسيقى';
+
+  @override
+  String get emptyNoMusicSubtitle => 'تحقق من تخزين جهازك بحثًا عن ملفات MP3.';
+
+  @override
+  String get emptyNoDownloadsTitle => 'لا توجد تنزيلات';
+
+  @override
+  String get emptyNoDownloadsSubtitle => 'ستظهر الأغاني التي تنزّلها هنا.';
+
+  @override
+  String get emptyNoRecordingsTitle => 'لا توجد تسجيلات';
+
+  @override
+  String get emptyNoRecordingsSubtitle =>
+      'سيتم حفظ تسجيلات الراديو الخاصة بك هنا.';
+
+  @override
+  String get searchSongsHint => 'البحث عن أغاني...';
+
+  @override
+  String get searchDownloadsHint => 'البحث في التنزيلات...';
+
+  @override
+  String get searchRecordingsHint => 'البحث في التسجيلات...';
+
+  @override
+  String get deleteLabel => 'حذف';
+
+  @override
+  String get permissionStorageTitle => 'مطلوب إذن التخزين';
+
+  @override
+  String get permissionRequiredTitle => 'إذن مطلوب';
+
+  @override
+  String get downloadCompleteTitle => 'اكتمل التنزيل';
+
+  @override
+  String downloadFileLabel(String name) {
+    return 'الملف: $name';
+  }
+
+  @override
+  String downloadSizeLabel(String size) {
+    return 'الحجم: $size';
+  }
+
+  @override
+  String get fileExistsTitle => 'الملف موجود';
+
+  @override
+  String get tabAlbumsFolders => 'الألبومات/المجلدات';
+
+  @override
+  String get tabIndividualFiles => 'الملفات الفردية';
+
+  @override
+  String get masstamilanTitle => 'أحدث ألبومات التيلوغو';
+
+  @override
+  String get stopRecordingBeforeSwitch => 'أوقف التسجيل قبل تبديل التبويب.';
+
+  @override
+  String get mp3DownloadSearchHint => 'اسم الفيلم أو الأغنية أو الفنان.';
+
+  @override
+  String get aiAssistant => 'مساعد الذكاء الاصطناعي';
+
+  @override
+  String get aiAssistantSubtitle => 'احصل على مساعدة فورية من الذكاء الاصطناعي';
+
+  @override
+  String get aiChatHint => 'اكتب رسالة...';
+
+  @override
+  String get aiTyping => 'الذكاء الاصطناعي يكتب...';
+
+  @override
+  String get aiClearChat => 'مسح الدردشة';
+
+  @override
+  String get aiClearConfirm => 'هل أنت متأكد من مسح سجل الدردشة؟';
+
+  @override
+  String get aiContactHuman => 'اتصل بالدعم الفني';
+
+  @override
+  String get aiWelcome =>
+      'مرحباً! أنا مساعد الذكاء الاصطناعي لراديو GR. كيف يمكنني مساعدتك؟';
+
+  @override
+  String get aiError => 'فشل الحصول على رد، يرجى المحاولة مرة أخرى.';
 }

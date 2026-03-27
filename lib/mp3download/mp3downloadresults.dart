@@ -18,6 +18,7 @@ import 'package:grradio/mp3download/track_meta_data_service.dart';
 import 'package:grradio/widgets/response_button.dart';
 import 'package:hive/hive.dart';
 import 'package:html/parser.dart' as html;
+import 'package:grradio/l10n/app_localizations.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -565,16 +566,16 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
           barrierDismissible: false,
           builder: (BuildContext context) {
             return AlertDialog(
-              title: Text('Storage Permission Required'),
+              title: Text(AppLocalizations.of(context)!.permissionStorageTitle),
               content: Text(message),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: Text('Cancel'),
+                  child: Text(AppLocalizations.of(context)!.buttonCancel),
                 ),
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(true),
-                  child: Text('Allow'),
+                  child: Text(AppLocalizations.of(context)!.buttonAllow),
                 ),
               ],
             );
@@ -590,7 +591,7 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
           barrierDismissible: false,
           builder: (BuildContext context) {
             return AlertDialog(
-              title: Text('Permission Required'),
+              title: Text(AppLocalizations.of(context)!.permissionRequiredTitle),
               content: Text(
                 'Storage permission is permanently denied. '
                 'Please enable it in app settings to download files.',
@@ -598,11 +599,11 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: Text('Cancel'),
+                  child: Text(AppLocalizations.of(context)!.buttonCancel),
                 ),
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(true),
-                  child: Text('Open Settings'),
+                  child: Text(AppLocalizations.of(context)!.buttonOpenSettings),
                 ),
               ],
             );
@@ -625,7 +626,7 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
             children: [
               Icon(Icons.check_circle, color: Colors.green),
               SizedBox(width: 8),
-              Text('Download Complete'),
+              Text(AppLocalizations.of(context)!.downloadCompleteTitle),
             ],
           ),
           content: Column(
@@ -651,7 +652,7 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text('OK'),
+              child: Text(AppLocalizations.of(context)!.buttonOk),
             ),
           ],
         );
@@ -681,18 +682,18 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
           context: context,
           builder: (BuildContext context) {
             return AlertDialog(
-              title: Text('File Exists'),
+              title: Text(AppLocalizations.of(context)!.fileExistsTitle),
               content: Text(
                 '"$fileName" already exists. Do you want to overwrite it?',
               ),
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: Text('Cancel'),
+                  child: Text(AppLocalizations.of(context)!.buttonCancel),
                 ),
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(true),
-                  child: Text('Overwrite'),
+                  child: Text(AppLocalizations.of(context)!.buttonOverwrite),
                 ),
               ],
             );
@@ -1278,7 +1279,7 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
           SizedBox(height: 16),
           ElevatedButton(
             onPressed: _fetchSearchResults,
-            child: Text('Try Again'),
+            child: Text(AppLocalizations.of(context)!.buttonTryAgain),
           ),
         ],
       ),
@@ -1341,7 +1342,7 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
                   // 💡 UPDATED: Albums/Folders section with toggle
                   if (_directories.isNotEmpty) ...[
                     _buildSectionHeader(
-                      title: 'Albums/Folders',
+                      title: AppLocalizations.of(context)!.tabAlbumsFolders,
                       itemCount: _directories.length,
                       isExpanded: _showDirectories,
                       onToggle: () {
@@ -1373,7 +1374,7 @@ class _Mp3DownloadResultsScreenState extends State<Mp3DownloadResultsScreen> {
                   // 💡 UPDATED: Individual Files section with toggle
                   if (_files.isNotEmpty) ...[
                     _buildSectionHeader(
-                      title: 'Individual Files',
+                      title: AppLocalizations.of(context)!.tabIndividualFiles,
                       itemCount: _files.length,
                       isExpanded: _showFiles,
                       onToggle: () {
