@@ -19,11 +19,11 @@ import 'package:grradio/ads/ad_config_provider.dart';
 import 'package:grradio/api/analytics_service_api.dart';
 import 'package:grradio/app/splash_animation_screen.dart';
 import 'package:grradio/data/track_metadata.dart';
+import 'package:grradio/l10n/app_localizations.dart';
+import 'package:grradio/more/locale_provider.dart';
 import 'package:grradio/more/more.dart';
 import 'package:grradio/more/notificationservice.dart';
 import 'package:grradio/more/theme_provider.dart';
-import 'package:grradio/more/locale_provider.dart';
-import 'package:grradio/l10n/app_localizations.dart';
 import 'package:grradio/mp3download/mp3downloadscreen.dart';
 import 'package:grradio/player/mp3playerhandler.dart';
 import 'package:grradio/player/mp3playerscreen.dart';
@@ -477,7 +477,10 @@ void main() async {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         // Provide the already-initialised instance — no create needed.
         ChangeNotifierProvider<AdConfigProvider>.value(value: adConfigProvider),
-        ChangeNotifierProvider(create: (_) => LocaleProvider()..loadSavedLocale()),
+        ChangeNotifierProvider(
+          // FIX: Use the cascade operator (..) instead of a single dot (.)
+          create: (_) => LocaleProvider()..loadSavedPreferences(),
+        ),
       ],
       child: RadioApp(),
     ),
@@ -573,10 +576,7 @@ class _MainNavigatorState extends State<MainNavigator> {
     _analyticsService.logActivity(
       deviceId ?? 'unknown',
       'Dismiss Mini Player',
-      details: {
-        'trackTitle': mediaItem.title,
-        'trackId': mediaItem.id,
-      },
+      details: {'trackTitle': mediaItem.title, 'trackId': mediaItem.id},
     );
     if (_isPanelOpen) _panelController.close();
   }
@@ -809,7 +809,9 @@ class _MainNavigatorState extends State<MainNavigator> {
     if (_isRecording) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AppLocalizations.of(context)!.stopRecordingBeforeSwitch),
+          content: Text(
+            AppLocalizations.of(context)!.stopRecordingBeforeSwitch,
+          ),
           backgroundColor: Colors.red.shade700,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),
@@ -827,10 +829,7 @@ class _MainNavigatorState extends State<MainNavigator> {
     _analyticsService.logActivity(
       deviceId ?? 'unknown',
       'Switch Tab',
-      details: {
-        'from': labels[_selectedIndex],
-        'to': labels[index],
-      },
+      details: {'from': labels[_selectedIndex], 'to': labels[index]},
     );
 
     setState(() {

@@ -59,7 +59,7 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
   // ── Playback progress (local files only — music / download / recording) ────
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
-  Timer? _progressTimer; // polls position every 500 ms
+
   StreamSubscription? _mediaItemSub; // watches duration from mediaItem
 
   late AnimationController _pulseCtrl;
@@ -128,7 +128,6 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
     ).animate(CurvedAnimation(parent: _shareBounceCtrl, curve: Curves.easeOut));
 
     // ── Progress bar: poll position every 500 ms + watch duration ────────────
-    _startProgressTimer();
     _mediaItemSub = widget.audioHandler.mediaItem.listen((mi) {
       if (!mounted) return;
       final dur = (mi as MediaItem?)?.duration ?? Duration.zero;
@@ -253,19 +252,14 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
 
   void _syncSleepTimerStateFromHandler() {
     try {
-      final Duration? remaining = widget.audioHandler.getSleepTimerRemaining()
-          as Duration?;
+      final Duration? remaining =
+          widget.audioHandler.getSleepTimerRemaining() as Duration?;
       if (!mounted) return;
       setState(() {
         _sleepTimerActive = remaining != null && remaining > Duration.zero;
         _sleepRemainingSeconds = remaining?.inSeconds ?? 0;
       });
     } catch (_) {}
-  }
-
-  // ── Progress timer — polls playbackState.position every 500 ms ───────────
-  void _startProgressTimer() {
-    _progressTimer?.cancel();
   }
 
   // ── Progress helpers ──────────────────────────────────────────────────────
@@ -325,15 +319,12 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
     final isLandscapeWide =
         mq.orientation == Orientation.landscape && screenWidth >= 600;
     final double artSize = sidePanelMode
-        ? math
-            .min(screenWidth * 0.30 * 0.8, 200.0)
-            .clamp(90.0, 200.0)
+        ? math.min(screenWidth * 0.30 * 0.8, 200.0).clamp(90.0, 200.0)
         : isLandscapeWide
-            ? math.min(
-                math.min(screenHeight * 0.58, screenWidth * 0.38),
-                320.0,
-              ).clamp(200.0, 340.0)
-            : screenWidth * 0.72;
+        ? math
+              .min(math.min(screenHeight * 0.58, screenWidth * 0.38), 320.0)
+              .clamp(200.0, 340.0)
+        : screenWidth * 0.72;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
@@ -404,10 +395,7 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
             builder: (_, v, child) => Opacity(opacity: v, child: child),
             child: Container(
               margin: EdgeInsets.only(bottom: sidePanelMode ? 8 : 14),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 6,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               decoration: BoxDecoration(
                 color: Colors.red.shade700,
                 borderRadius: BorderRadius.circular(20),
@@ -457,9 +445,7 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
         ],
         image: widget.mediaItem?.artUri != null
             ? DecorationImage(
-                image: NetworkImage(
-                  widget.mediaItem!.artUri.toString(),
-                ),
+                image: NetworkImage(widget.mediaItem!.artUri.toString()),
                 fit: BoxFit.cover,
               )
             : null,
@@ -469,10 +455,7 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
                 end: Alignment.bottomRight,
                 colors: isDark
                     ? [const Color(0xFF1A0A3E), const Color(0xFF0D2040)]
-                    : [
-                        const Color(0xFFF0EEFF),
-                        const Color(0xFFE0F0FF),
-                      ],
+                    : [const Color(0xFFF0EEFF), const Color(0xFFE0F0FF)],
               )
             : null,
       ),
@@ -547,11 +530,11 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
                         const SizedBox(height: 12),
                         recordingPill,
                         _buildMetaIcyAndProgressSection(
-                            tt, cs, isLandscapeWide),
-                        _buildTransportAndActions(
                           tt,
-                          compact: sidePanelMode,
+                          cs,
+                          isLandscapeWide,
                         ),
+                        _buildTransportAndActions(tt, compact: sidePanelMode),
                       ],
                     ),
                   ),
@@ -597,10 +580,10 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
       physics: _sliderDragging
           ? const NeverScrollableScrollPhysics()
           : disableScroll
-              ? const NeverScrollableScrollPhysics()
-              : const BouncingScrollPhysics(
-                  parent: AlwaysScrollableScrollPhysics(),
-                ),
+          ? const NeverScrollableScrollPhysics()
+          : const BouncingScrollPhysics(
+              parent: AlwaysScrollableScrollPhysics(),
+            ),
       child: columnContent,
     );
   }
@@ -635,7 +618,9 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
         if (!_isRadioStation) ...[
           const SizedBox(height: 6),
           Padding(
-            padding: EdgeInsets.symmetric(horizontal: isLandscapeWide ? 12 : 24),
+            padding: EdgeInsets.symmetric(
+              horizontal: isLandscapeWide ? 12 : 24,
+            ),
             child: Column(
               children: [
                 SliderTheme(
@@ -707,10 +692,7 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
     );
   }
 
-  Widget _buildTransportAndActions(
-    TextTheme tt, {
-    required bool compact,
-  }) {
+  Widget _buildTransportAndActions(TextTheme tt, {required bool compact}) {
     final double skipSize = compact ? 34 : 40;
     final double playSize = compact ? 62 : 76;
     final double gap = compact ? 12 : 18;
@@ -748,9 +730,7 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
                       ? []
                       : [
                           BoxShadow(
-                            color: const Color(
-                              0xFF7C4DFF,
-                            ).withOpacity(0.45),
+                            color: const Color(0xFF7C4DFF).withOpacity(0.45),
                             blurRadius: 20,
                             offset: const Offset(0, 6),
                           ),
@@ -971,8 +951,8 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
                     'Record',
                     key: const ValueKey('idle'),
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
           ),
         ],
@@ -1009,8 +989,8 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
             Text(
               'Recordings',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -1131,12 +1111,10 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
           ),
           const SizedBox(height: 8),
           Text(
-            isActive
-                ? _formatSleepRemaining(_sleepRemainingSeconds)
-                : 'Sleep',
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: cs.onSurfaceVariant,
-                ),
+            isActive ? _formatSleepRemaining(_sleepRemainingSeconds) : 'Sleep',
+            style: Theme.of(
+              context,
+            ).textTheme.labelMedium?.copyWith(color: cs.onSurfaceVariant),
           ),
         ],
       ),

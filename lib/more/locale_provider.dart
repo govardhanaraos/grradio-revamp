@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LocaleProvider extends ChangeNotifier {
-  static const String _prefKey = 'app_locale';
+  static const String _appLocaleKey = 'app_locale';
+  static const String _listeningLangKey = 'listening_language';
 
   Locale _locale = const Locale('en');
+  String _listeningLanguage = 'en';
 
   Locale get currentLocale => _locale;
+  String get listeningLanguage => _listeningLanguage;
 
   String get currentLanguageName {
     switch (_locale.languageCode) {
@@ -26,11 +29,12 @@ class LocaleProvider extends ChangeNotifier {
     }
   }
 
-  /// Load previously saved locale from SharedPreferences on startup.
-  Future<void> loadSavedLocale() async {
+  /// Load previously saved locale and listening language from SharedPreferences on startup.
+  Future<void> loadSavedPreferences() async {
     final prefs = await SharedPreferences.getInstance();
-    final code = prefs.getString(_prefKey) ?? 'en';
-    _locale = Locale(code);
+    final appLocaleCode = prefs.getString(_appLocaleKey) ?? 'en';
+    _locale = Locale(appLocaleCode);
+    _listeningLanguage = prefs.getString(_listeningLangKey) ?? 'en';
     notifyListeners();
   }
 
@@ -40,7 +44,16 @@ class LocaleProvider extends ChangeNotifier {
     _locale = locale;
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_prefKey, locale.languageCode);
+    await prefs.setString(_appLocaleKey, locale.languageCode);
+  }
+
+  /// Change the listening language and persist the choice.
+  Future<void> setListeningLanguage(String languageCode) async {
+    if (_listeningLanguage == languageCode) return;
+    _listeningLanguage = languageCode;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_listeningLangKey, languageCode);
   }
 
   /// The list of locales supported by the app.

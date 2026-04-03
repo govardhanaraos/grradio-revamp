@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:grradio/Env.dart';
 import 'package:grradio/api/analytics_service_api.dart';
+import 'package:grradio/l10n/app_localizations.dart';
 import 'package:grradio/main.dart';
 import 'package:grradio/more/about_screen.dart';
 import 'package:grradio/more/helpandsupport.dart';
+import 'package:grradio/more/language_selection_screen.dart';
+import 'package:grradio/more/locale_provider.dart';
 import 'package:grradio/more/notification_settings_screen.dart';
 import 'package:grradio/more/theme_provider.dart';
-import 'package:grradio/more/locale_provider.dart';
-import 'package:grradio/more/language_selection_screen.dart';
-import 'package:grradio/l10n/app_localizations.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:provider/provider.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
@@ -357,7 +357,11 @@ class MoreScreen extends StatelessWidget {
   }
 
   /// Dark mode tile with a Switch trailing indicator showing current state.
-  Widget _buildDarkModeTile(BuildContext context, bool isDark, AppLocalizations l) {
+  Widget _buildDarkModeTile(
+    BuildContext context,
+    bool isDark,
+    AppLocalizations l,
+  ) {
     final cs = Theme.of(context).colorScheme;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
@@ -445,12 +449,15 @@ class MoreScreen extends StatelessWidget {
           ),
           child: Icon(Icons.translate_rounded, color: cs.secondary, size: 20),
         ),
-        title: Text(l.settingLanguage, style: Theme.of(context).textTheme.titleMedium),
+        title: Text(
+          l.settingLanguage,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
         subtitle: Text(
           localeProvider.currentLanguageName,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: cs.onSurfaceVariant,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
         ),
         trailing: Icon(
           Icons.arrow_forward_ios_rounded,
@@ -464,12 +471,31 @@ class MoreScreen extends StatelessWidget {
           );
           Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (_) => const LanguageSelectionScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const LanguageSelectionScreen()),
           );
         },
       ),
+    );
+  }
+
+  Widget _buildTile(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    bool isToggle = false,
+    bool value = false,
+    ValueChanged<bool>? onChanged,
+    VoidCallback? onTap,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    return ListTile(
+      leading: Icon(icon, color: cs.primary),
+      title: Text(title, style: tt.bodyLarge),
+      trailing: isToggle
+          ? Switch(value: value, onChanged: onChanged, activeColor: cs.primary)
+          : const Icon(Icons.arrow_forward_ios, size: 16),
+      onTap: isToggle ? null : onTap,
     );
   }
 }

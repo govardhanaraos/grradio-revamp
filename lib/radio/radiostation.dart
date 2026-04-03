@@ -92,10 +92,16 @@ class RadioStation {
     final region = map['genre'] as String?;
     final pageFromMap = map['page'] as String?;
 
+    // Safely parse the stream URL
+    final rawStream = map['streamUrl']?.toString().trim();
+    final parsedStreamUrl = (rawStream != null && rawStream.isNotEmpty)
+        ? rawStream
+        : null;
+
     return RadioStation(
       id: idString,
       name: map['name']?.toString().trim() ?? '',
-      streamUrl: map['streamUrl']?.toString().trim() ?? '',
+      streamUrl: parsedStreamUrl, // Passes null instead of ''
       logoUrl: _parseLogoUrl(map),
       language: languageFromMap,
       genre: region,
