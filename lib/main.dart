@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:ui';
 
 import 'package:audio_service/audio_service.dart';
@@ -23,6 +24,7 @@ import 'package:grradio/l10n/app_localizations.dart';
 import 'package:grradio/more/locale_provider.dart';
 import 'package:grradio/more/more.dart';
 import 'package:grradio/more/notificationservice.dart';
+import 'package:grradio/more/wake_alarm_service.dart';
 import 'package:grradio/more/theme_provider.dart';
 import 'package:grradio/mp3download/mp3downloadscreen.dart';
 import 'package:grradio/player/mp3playerhandler.dart';
@@ -166,8 +168,14 @@ Future<void> _updateStatusFromCustomerInfo(CustomerInfo customerInfo) async {
 Future<String> _getDeviceId() async {
   final deviceInfo = DeviceInfoPlugin();
   if (Platform.isAndroid) {
-    final androidInfo = await deviceInfo.androidInfo;
-    return androidInfo.id;
+    final random = Random.secure();
+    final values = List<int>.generate(16, (i) => random.nextInt(256));
+    // Provide a simple V4-like UUID format securely generated per install
+    values[6] = (values[6] & 0x0f) | 0x40;
+    values[8] = (values[8] & 0x3f) | 0x80;
+    final hex = values.map((b) => b.toRadixString(16).padLeft(2, '0')).toList();
+    final uuid = '${hex.sublist(0, 4).join('')}-${hex.sublist(4, 6).join('')}-${hex.sublist(6, 8).join('')}-${hex.sublist(8, 10).join('')}-${hex.sublist(10).join('')}';
+    return "android_$uuid";
   } else if (Platform.isIOS) {
     final iosInfo = await deviceInfo.iosInfo;
     return iosInfo.identifierForVendor ?? "unknown";
@@ -219,33 +227,33 @@ void checkForUpdate(BuildContext context) async {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (_) => AlertDialog(
-          title: Text("Update Available"),
-          content: Text(
-            "A new version ($latestVersion) of GR Radio is available. "
-            "Please update to continue enjoying the best experience.",
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text("Later"),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                _analyticsService.logActivity(
-                  deviceId ?? 'unknown',
-                  'Update App Clicked',
-                  details: {'version': latestVersion},
-                );
-                final uri = Uri.parse(updateUrl);
-                if (await canLaunchUrl(uri)) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                }
-              },
-              child: Text("Update"),
-            ),
-          ],
-        ),
+        builder: (dialogContext) {
+          final l = AppLocalizations.of(dialogContext)!;
+          return AlertDialog(
+            title: Text(l.dialogUpdateTitle),
+            content: Text(l.dialogUpdateContent(latestVersion)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(l.dialogUpdateLater),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  _analyticsService.logActivity(
+                    deviceId ?? 'unknown',
+                    'Update App Clicked',
+                    details: {'version': latestVersion},
+                  );
+                  final uri = Uri.parse(updateUrl);
+                  if (await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+                child: Text(l.dialogUpdateNow),
+              ),
+            ],
+          );
+        },
       );
       _analyticsService.logActivity(
         deviceId ?? 'unknown',
@@ -334,6 +342,8 @@ void _loadRemainingStationsInBackground({required bool updateUIProgressively}) {
         ? List.from(stationsNotifier.value)
         : [];
 
+    int previousUniqueCount = 0;
+
     while (hasMore) {
       final stations = await _radioService.fetchRadioStations(
         page: currentPage,
@@ -342,10 +352,18 @@ void _loadRemainingStationsInBackground({required bool updateUIProgressively}) {
       if (stations.isNotEmpty) {
         backgroundAccumulator.addAll(stations);
 
+        final unique = {
+          for (var s in backgroundAccumulator) s.id: s,
+        }.values.toList();
+
+        // Prevent infinite loop if backend repeats the same data
+        if (unique.length == previousUniqueCount) {
+          hasMore = false;
+          break;
+        }
+        previousUniqueCount = unique.length;
+
         if (updateUIProgressively) {
-          final unique = {
-            for (var s in backgroundAccumulator) s.id: s,
-          }.values.toList();
           stationsNotifier.value = List.unmodifiable(unique);
         }
 
@@ -453,6 +471,7 @@ void main() async {
   HttpOverrides.global = MyHttpOverrides();
 
   WidgetsFlutterBinding.ensureInitialized();
+  await WakeAlarmService.initialize();
   await SystemChrome.setPreferredOrientations(const [
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -464,6 +483,11 @@ void main() async {
   deviceId = await _getPersistentDeviceId();
   await initializeApp();
   await _initAudioHandlers();
+
+  await WakeAlarmService.consumePendingWakeAndPlay(
+    play: (id) => globalRadioAudioHandler.playFromMediaId(id),
+  );
+  await WakeAlarmService.repairAndroidAlarmIfNeeded();
 
   adConfigProvider = AdConfigProvider(_analyticsService);
   await adConfigProvider.hydrateFromCache(isPremiumUser: isPremiumUser.value);
@@ -537,7 +561,7 @@ class RadioApp extends StatelessWidget {
     final localeProvider = Provider.of<LocaleProvider>(context);
 
     return MaterialApp(
-      title: 'GR Radio',
+      onGenerateTitle: (ctx) => AppLocalizations.of(ctx)!.appName,
       locale: localeProvider.currentLocale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
@@ -673,16 +697,18 @@ class _MainNavigatorState extends State<MainNavigator> {
     });
   }
 
-  String _sleepMiniLabel() {
+  String _sleepMiniLabel(BuildContext context) {
     if (!_sleepTimerActive || _sleepRemainingSeconds <= 0) return '';
+    final l = AppLocalizations.of(context);
+    if (l == null) return '';
     final minutes = (_sleepRemainingSeconds / 60).ceil();
     if (minutes >= 60) {
       final h = minutes ~/ 60;
       final m = minutes % 60;
-      if (m == 0) return 'Sleep in ${h}h';
-      return 'Sleep in ${h}h ${m}m';
+      if (m == 0) return l.sleepInHoursOnly(h);
+      return l.sleepInHoursMinutes(h, m);
     }
-    return 'Sleep in ${minutes}m';
+    return l.sleepInMinutesOnly(minutes);
   }
 
   Future<void> _checkInitialConnection() async {
@@ -700,30 +726,31 @@ class _MainNavigatorState extends State<MainNavigator> {
     showDialog(
       context: context,
       barrierDismissible: false, // Force user to acknowledge or reconnect
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Row(
-          children: [
-            Icon(Icons.signal_wifi_off, color: Colors.red),
-            SizedBox(width: 10),
-            Text("No Internet"),
-          ],
-        ),
-        content: const Text(
-          "GR Radio requires an active internet connection to stream music. Please check your settings.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              final result = await Connectivity().checkConnectivity();
-              if (!result.contains(ConnectivityResult.none)) {
-                _dismissDialog();
-              }
-            },
-            child: const Text("RETRY"),
+      builder: (dialogContext) {
+        final l = AppLocalizations.of(dialogContext)!;
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              const Icon(Icons.signal_wifi_off, color: Colors.red),
+              const SizedBox(width: 10),
+              Expanded(child: Text(l.noInternetStreamingTitle)),
+            ],
           ),
-        ],
-      ),
+          content: Text(l.noInternetStreamingBody),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                final result = await Connectivity().checkConnectivity();
+                if (!result.contains(ConnectivityResult.none)) {
+                  _dismissDialog();
+                }
+              },
+              child: Text(l.buttonRetryUpper),
+            ),
+          ],
+        );
+      },
     );
     _analyticsService.logActivity(
       deviceId ?? 'unknown',
@@ -741,14 +768,15 @@ class _MainNavigatorState extends State<MainNavigator> {
   void showNoInternetMessage() async {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
+        final l = AppLocalizations.of(dialogContext)!;
         return AlertDialog(
-          title: Text("No internet connection"),
-          content: Text("Please check your internet connection and try again."),
+          title: Text(l.dialogNoInternet),
+          content: Text(l.dialogNoInternetContent),
           actions: [
             TextButton(
-              child: Text("OK"),
-              onPressed: () => Navigator.of(context).pop(),
+              child: Text(l.buttonOk),
+              onPressed: () => Navigator.of(dialogContext).pop(),
             ),
           ],
         );
@@ -769,26 +797,26 @@ class _MainNavigatorState extends State<MainNavigator> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => AlertDialog(
-          title: const Text("Keep Radio Playing"),
-          content: const Text(
-            "To prevent the radio from stopping when your screen is off or during phone calls, "
-            "please allow the app to run in the background in the next screen.",
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("LATER"),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                Navigator.pop(context);
-                await Permission.ignoreBatteryOptimizations.request();
-              },
-              child: const Text("SETTINGS"),
-            ),
-          ],
-        ),
+        builder: (dialogContext) {
+          final l = AppLocalizations.of(dialogContext)!;
+          return AlertDialog(
+            title: Text(l.batteryOptimizationTitle),
+            content: Text(l.batteryOptimizationBody),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(l.batteryOptimizationLater),
+              ),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(dialogContext);
+                  await Permission.ignoreBatteryOptimizations.request();
+                },
+                child: Text(l.batteryOptimizationSettings),
+              ),
+            ],
+          );
+        },
       );
       _analyticsService.logActivity(
         deviceId ?? 'unknown',
@@ -825,7 +853,8 @@ class _MainNavigatorState extends State<MainNavigator> {
 
     if (_isPanelOpen) _panelController.close();
 
-    final labels = ['Radio', 'Player', 'Download', 'More'];
+    final l = AppLocalizations.of(context)!;
+    final labels = [l.tabRadio, l.tabPlayer, l.tabDownloads, l.tabMore];
     _analyticsService.logActivity(
       deviceId ?? 'unknown',
       'Switch Tab',
@@ -944,9 +973,10 @@ class _MainNavigatorState extends State<MainNavigator> {
                               children: [
                                 _PulsingDot(),
                                 const SizedBox(width: 8),
-                                const Text(
-                                  'RECORDING IN PROGRESS',
-                                  style: TextStyle(
+                                Text(
+                                  AppLocalizations.of(context)!
+                                      .recordingInProgressBadge,
+                                  style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
@@ -1060,7 +1090,7 @@ class _MainNavigatorState extends State<MainNavigator> {
                         onTap: () => _panelController.open(),
                         onDismiss: () => _stopAndDismissMiniPlayer(mediaItem),
                         audioHandler: globalRadioAudioHandler,
-                        sleepLabel: _sleepMiniLabel(),
+                        sleepLabel: _sleepMiniLabel(context),
                       )
                     : const SizedBox.shrink(),
                 panel: ExpandedPlayerContent(
@@ -1097,6 +1127,8 @@ class _MainNavigatorState extends State<MainNavigator> {
           stream: globalRadioAudioHandler.playbackState,
           builder: (context, stateSnapshot) {
             final isPlaying = stateSnapshot.data?.playing ?? false;
+            final l = AppLocalizations.of(context)!;
+            final sleepLbl = _sleepMiniLabel(context);
             return Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1137,17 +1169,18 @@ class _MainNavigatorState extends State<MainNavigator> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         Text(
-                          _sleepMiniLabel().isNotEmpty
-                              ? _sleepMiniLabel()
-                              : (mediaItem.artist ?? "Radio Stream"),
+                          sleepLbl.isNotEmpty
+                              ? sleepLbl
+                              : (mediaItem.artist ??
+                                  l.radioStreamSubtitleDefault),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             fontSize: 12,
-                            color: _sleepMiniLabel().isNotEmpty
+                            color: sleepLbl.isNotEmpty
                                 ? const Color(0xFF7C4DFF)
                                 : Colors.grey[600],
-                            fontWeight: _sleepMiniLabel().isNotEmpty
+                            fontWeight: sleepLbl.isNotEmpty
                                 ? FontWeight.w700
                                 : FontWeight.w500,
                           ),
@@ -1175,7 +1208,7 @@ class _MainNavigatorState extends State<MainNavigator> {
                     ),
                   ),
                   IconButton(
-                    tooltip: 'Hide mini player',
+                    tooltip: l.miniPlayerHideTooltip,
                     icon: const Icon(Icons.close_rounded, size: 22),
                     onPressed: _isRecording
                         ? null
@@ -1199,7 +1232,8 @@ class _MainNavigatorState extends State<MainNavigator> {
       CupertinoIcons.arrow_down_circle_fill,
       Icons.more_horiz,
     ];
-    const labels = ['Radio', 'Player', 'Download', 'More'];
+    final l = AppLocalizations.of(context)!;
+    final labels = [l.tabRadio, l.tabPlayer, l.tabDownloads, l.tabMore];
 
     const brandPurple = Color(0xFF7C4DFF);
     final unselectedGrey = Colors.grey.shade500;
@@ -1271,68 +1305,71 @@ class _MainNavigatorState extends State<MainNavigator> {
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
-            children: List.generate(4, (index) {
+            children: () {
+              final l = AppLocalizations.of(context)!;
+              final labels = [l.tabRadio, l.tabPlayer, l.tabDownloads, l.tabMore];
               final icons = [
                 Icons.radio,
                 Icons.music_note,
                 CupertinoIcons.arrow_down_circle_fill,
                 Icons.more_horiz,
               ];
-              final labels = ['Radio', 'Player', 'Download', 'More'];
-              final isSelected = _selectedIndex == index;
-              return Expanded(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => _onItemTapped(index),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 8,
-                            horizontal: 16,
+              return List.generate(4, (index) {
+                final isSelected = _selectedIndex == index;
+                return Expanded(
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => _onItemTapped(index),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            padding: const EdgeInsets.symmetric(
+                              vertical: 8,
+                              horizontal: 16,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: isSelected
+                                  ? const LinearGradient(
+                                      colors: [
+                                        Color(0xFF7C4DFF),
+                                        Color(0xFF448AFF),
+                                      ],
+                                    )
+                                  : null,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Icon(
+                              icons[index],
+                              size: 24,
+                              color: isSelected
+                                  ? Colors.white
+                                  : Colors.grey.shade500,
+                            ),
                           ),
-                          decoration: BoxDecoration(
-                            gradient: isSelected
-                                ? const LinearGradient(
-                                    colors: [
-                                      Color(0xFF7C4DFF),
-                                      Color(0xFF448AFF),
-                                    ],
-                                  )
-                                : null,
-                            borderRadius: BorderRadius.circular(20),
+                          const SizedBox(height: 4),
+                          Text(
+                            labels[index],
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                              color: isSelected
+                                  ? const Color(0xFF7C4DFF)
+                                  : Colors.grey.shade500,
+                            ),
                           ),
-                          child: Icon(
-                            icons[index],
-                            size: 24,
-                            color: isSelected
-                                ? Colors.white
-                                : Colors.grey.shade500,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          labels[index],
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: isSelected
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                            color: isSelected
-                                ? const Color(0xFF7C4DFF)
-                                : Colors.grey.shade500,
-                          ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              );
-            }),
+                );
+              });
+            }(),
           ),
         ),
       ),

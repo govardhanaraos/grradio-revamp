@@ -5,15 +5,18 @@ import 'dart:math' show Random;
 import 'package:audio_service/audio_service.dart';
 import 'package:audio_session/audio_session.dart';
 import 'package:dio/dio.dart';
-import 'package:grradio/radio/radiostation.dart';
+import 'package:grradio/api/analytics_service_api.dart';
+import 'package:grradio/main.dart';
 import 'package:grradio/radio/radio_handler_base.dart';
+import 'package:grradio/radio/radiostation.dart';
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import 'package:grradio/api/analytics_service_api.dart';
-import 'package:grradio/main.dart';
+
+import '../transcription/radio_transcriber.dart';
+import '../transcription/vosk_model_manager.dart';
 
 class RadioHandlerImpl extends BaseAudioHandler
     with SeekHandler
@@ -39,7 +42,7 @@ class RadioHandlerImpl extends BaseAudioHandler
   String? _lastExtractedStreamUrl;
   bool _shuffleEnabled = false;
   LoopMode _loopMode = LoopMode.off;
-
+  bool _ccEnabled = false;
   // Stream interruption recovery
   Timer? _recoveryTimer;
   int _reconnectAttempts = 0;
@@ -60,6 +63,9 @@ class RadioHandlerImpl extends BaseAudioHandler
 
   List<RadioStation> _radioStations;
 
+  RadioTranscriber? _transcriber;
+  StreamSubscription<TranscriptionChunk>? _transcriptionSub;
+
   // ── Local file queue ──────────────────────────────────────────────────────
   // Populated by loadLocalQueueAndPlay() whenever the user taps a local file.
   // next/previous on local files navigate within this list, completely
@@ -77,6 +83,8 @@ class RadioHandlerImpl extends BaseAudioHandler
     _notifyAudioHandlerAboutPlaybackEvents();
     _setupPlayerListeners();
     _setupBackgroundPlaybackMonitoring();
+
+    _transcriber = RadioTranscriber(kVoskModels.first);
   }
 
   @override
@@ -86,6 +94,22 @@ class RadioHandlerImpl extends BaseAudioHandler
     // applied in skipToNext/skipToPrevious when multiple local files exist.
     await _player.setShuffleModeEnabled(false);
     customEvent.add({'event': 'shuffle_changed', 'enabled': _shuffleEnabled});
+  }
+
+  @override
+  Future<dynamic> customAction(
+    String name, [
+    Map<String, dynamic>? extras,
+  ]) async {
+    if (name == 'start_transcription') {
+      _ccEnabled = true;
+      if (_currentStation != null) {
+        _startTranscriptionForStation(_currentStation!);
+      }
+    } else if (name == 'stop_transcription') {
+      _ccEnabled = false;
+      await _stopTranscription();
+    }
   }
 
   @override
@@ -246,10 +270,7 @@ class RadioHandlerImpl extends BaseAudioHandler
     _analyticsService.logActivity(
       deviceId!,
       'Play Local File',
-      details: {
-        'title': title,
-        'path': path,
-      },
+      details: {'title': title, 'path': path},
     );
 
     // Cancel any radio recovery — we are now in local-file mode.
@@ -257,6 +278,7 @@ class RadioHandlerImpl extends BaseAudioHandler
     _recoveryTimer = null;
     _isRecovering = false;
     _currentStation = null; // null = local-file mode for skipToNext/Previous
+    await _stopTranscription();
 
     // SongModel.data on Android may be content://; downloads/recordings use file paths.
     final Uri playbackUri = path.startsWith('content://')
@@ -272,9 +294,7 @@ class RadioHandlerImpl extends BaseAudioHandler
     );
 
     try {
-      await _player.setAudioSource(
-        AudioSource.uri(playbackUri, tag: item),
-      );
+      await _player.setAudioSource(AudioSource.uri(playbackUri, tag: item));
       // Always off for local: repeat-one / repeat-all / advance-next are handled
       // in [_handleLocalPlaybackCompleted] when processingState == completed.
       await _player.setLoopMode(LoopMode.off);
@@ -288,6 +308,12 @@ class RadioHandlerImpl extends BaseAudioHandler
     } catch (e) {
       print('Error playing local file: $e');
     }
+  }
+
+  @override
+  Future<void> onTaskRemoved() async {
+    await _stopTranscription();
+    await super.onTaskRemoved();
   }
 
   /// When a local file finishes, apply repeat / queue advance / reset scrubber.
@@ -492,10 +518,7 @@ class RadioHandlerImpl extends BaseAudioHandler
         _analyticsService.logActivity(
           deviceId!,
           'Start Recording',
-          details: {
-            'stationId': mediaItem.id,
-            'stationName': mediaItem.title,
-          },
+          details: {'stationId': mediaItem.id, 'stationName': mediaItem.title},
         );
         _sendRecordStatus(true);
         await _startRecording(mediaItem);
@@ -508,10 +531,7 @@ class RadioHandlerImpl extends BaseAudioHandler
       _analyticsService.logActivity(
         deviceId!,
         'Stop Recording',
-        details: {
-          'stationId': mediaItem?.id,
-          'stationName': mediaItem?.title,
-        },
+        details: {'stationId': mediaItem?.id, 'stationName': mediaItem?.title},
       );
       await _stopRecording();
       _isRecording = false;
@@ -838,7 +858,8 @@ class RadioHandlerImpl extends BaseAudioHandler
         controls.add(MediaControl.play);
       }
     }
-    final bool showSkip = _radioStations.length > 1 ||
+    final bool showSkip =
+        _radioStations.length > 1 ||
         (_currentStation == null && _localQueue.length > 1);
     if (showSkip) {
       controls.add(MediaControl.skipToPrevious);
@@ -857,8 +878,9 @@ class RadioHandlerImpl extends BaseAudioHandler
     playbackState.add(
       playbackState.value.copyWith(
         controls: controls,
-        androidCompactActionIndices:
-            controls.length > 2 ? const [0, 1, 2] : [0, 1],
+        androidCompactActionIndices: controls.length > 2
+            ? const [0, 1, 2]
+            : [0, 1],
         systemActions: systemActions,
         updatePosition: _player.position,
         bufferedPosition: _player.bufferedPosition,
@@ -947,6 +969,10 @@ class RadioHandlerImpl extends BaseAudioHandler
       _recoveryTimer?.cancel();
       _isRecovering = false;
       _lastSuccessfulPlayback = DateTime.now();
+      if (_ccEnabled) {
+        _startTranscriptionForStation(station);
+      }
+
       customEvent.add({'event': 'playback_started', 'station': station.name});
       _analyticsService.logActivity(
         deviceId!,
@@ -992,6 +1018,29 @@ class RadioHandlerImpl extends BaseAudioHandler
         errorStr.contains('SSLHandshakeException') ||
         errorStr.contains('CertPathValidatorException') ||
         errorStr.contains('unable to get local issuer certificate');
+  }
+
+  void _startTranscriptionForStation(RadioStation station) {
+    if (_transcriber == null) return;
+    _transcriptionSub?.cancel();
+    final url = station.streamUrl;
+    if (url == null || url.isEmpty) return;
+
+    _transcriptionSub = _transcriber!.transcriptStream.listen((chunk) {
+      customEvent.add({
+        'event': 'transcription',
+        'text': chunk.text,
+        'isFinal': chunk.isFinal,
+      });
+    });
+
+    _transcriber!.start(url);
+  }
+
+  Future<void> _stopTranscription() async {
+    _transcriptionSub?.cancel();
+    _transcriptionSub = null;
+    await _transcriber?.stop();
   }
 
   Future<void> _playWithSSLWorkaround(
@@ -1314,7 +1363,16 @@ class RadioHandlerImpl extends BaseAudioHandler
 
   @override
   Future<void> stop() async {
+    await _stopTranscription();
+
     await _player.stop();
+    playbackState.add(
+      playbackState.value.copyWith(
+        playing: false,
+        processingState: AudioProcessingState.idle,
+      ),
+    );
+
     await cancelSleepTimer();
     await WakelockPlus.disable();
     return super.stop();

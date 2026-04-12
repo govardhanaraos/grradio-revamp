@@ -33,7 +33,7 @@ dependencies:
   xml: ^6.4.2  # Add this line
   html: ^0.15.1  # Add this line for HTML parsing
   rxdart: ^0.27.7
-  flutter_native_splash: ^2.4.7
+  flutter_native_splash: 2.4.4
   flutter_launcher_icons: ^0.14.4
   device_info_plus: ^11.0.0
   flutter_bootstrap: ^2.0.0
@@ -51,6 +51,18 @@ dependencies:
   wakelock_plus: ^1.2.8
   sliding_up_panel: ^2.0.0+1
   connectivity_plus: ^6.0.0
+
+  # ── Live Transcription (Vosk – on-device, offline ASR) ──────────────────────
+  # Android-only (vosk_flutter does not support iOS/Web).
+  vosk_flutter: ^0.3.48
+  android_alarm_manager_plus: ^5.0.0
+  android_intent_plus: ^6.0.0
+  timezone: ^0.9.4
+  flutter_timezone: ^5.0.2
+
+  # ffmpeg_kit_flutter_audio removed — discontinued (archived 2025), native
+  # binary com.arthenica:ffmpeg-kit-audio:6.0-2 no longer resolvable from Maven.
+  # Audio decoding is handled by just_audio + audio_session directly.
 
 
 #  album_art_plugin:
@@ -126,3 +138,5 @@ flutter_launcher_icons:
 
 dependency_overrides:
   path: 1.9.0
+  vosk_flutter:
+    path: plugins/vosk_flutter

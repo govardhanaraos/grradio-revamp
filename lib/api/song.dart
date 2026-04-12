@@ -6,8 +6,8 @@ class Song {
 
   factory Song.fromJson(Map<String, dynamic> json) {
     return Song(
-      title: json['title'] as String,
-      url: json['url'] as String,
+      title: (json['song_name'] ?? json['title'] ?? '') as String,
+      url: (json['blomp_url'] ?? json['url'] ?? '') as String,
     );
   }
 }

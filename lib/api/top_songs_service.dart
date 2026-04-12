@@ -6,13 +6,21 @@ import 'package:http/http.dart' as http;
 
 class TopSongsService {
   Future<List<Song>> fetchTopSongs(String languageCode) async {
-    final uri = Uri.parse('${Env.apiBaseUrl}/top-songs?lang=$languageCode');
+    final uri = Uri.parse('${Env.apiBaseUrl}/api/v1/ai/top-songs?language=$languageCode');
 
     try {
       final response = await _getWithRetry(uri);
       if (response.statusCode == 200) {
-        final decoded = json.decode(response.body) as Map<String, dynamic>;
-        final songs = (decoded['songs'] as List)
+        final decoded = json.decode(utf8.decode(response.bodyBytes));
+        
+        List<dynamic> songsList = [];
+        if (decoded is List) {
+          songsList = decoded;
+        } else if (decoded is Map<String, dynamic> && decoded['songs'] != null) {
+          songsList = decoded['songs'] as List;
+        }
+        
+        final songs = songsList
             .map((songJson) => Song.fromJson(songJson as Map<String, dynamic>))
             .toList();
         return songs;
@@ -52,16 +60,16 @@ class TopSongsService {
     const jsonResponse = '''
     {
       "songs": [
-        {"title": "Song 1", "url": "http://example.com/song1.mp3"},
-        {"title": "Song 2", "url": "http://example.com/song2.mp3"},
-        {"title": "Song 3", "url": "http://example.com/song3.mp3"},
-        {"title": "Song 4", "url": "http://example.com/song4.mp3"},
-        {"title": "Song 5", "url": "http://example.com/song5.mp3"},
-        {"title": "Song 6", "url": "http://example.com/song6.mp3"},
-        {"title": "Song 7", "url": "http://example.com/song7.mp3"},
-        {"title": "Song 8", "url": "http://example.com/song8.mp3"},
-        {"title": "Song 9", "url": "http://example.com/song9.mp3"},
-        {"title": "Song 10", "url": "http://example.com/song10.mp3"}
+        {"title": "Trending Hit - Vocals", "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"},
+        {"title": "Classic Acoustic Mix", "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3"},
+        {"title": "Lo-Fi Deep Focus", "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-3.mp3"},
+        {"title": "Electronic Dance Beat", "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-4.mp3"},
+        {"title": "Ambient Chillwave", "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3"},
+        {"title": "Jazz Lounge Session", "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-6.mp3"},
+        {"title": "Upbeat Pop Anthem", "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-7.mp3"},
+        {"title": "Cinematic Soundtrack", "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3"},
+        {"title": "Midnight Blues", "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-9.mp3"},
+        {"title": "Indie Rock Groove", "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-10.mp3"}
       ]
     }
     ''';

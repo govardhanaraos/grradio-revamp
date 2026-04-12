@@ -9,6 +9,7 @@ import 'package:grradio/more/language_selection_screen.dart';
 import 'package:grradio/more/locale_provider.dart';
 import 'package:grradio/more/notification_settings_screen.dart';
 import 'package:grradio/more/theme_provider.dart';
+import 'package:grradio/more/wake_me_up_screen.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:provider/provider.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
@@ -21,19 +22,21 @@ class MoreScreen extends StatelessWidget {
   final AnalyticsServiceAPI _analyticsService = AnalyticsServiceAPI();
 
   Future<void> _shareApp(BuildContext context) async {
-    const String message =
-        'Hey! Check out ${Env.appName} for high-quality radio streaming and premium features. Download it here: ${Env.playStoreUrl}';
+    final l = AppLocalizations.of(context)!;
+    final message = l.shareAppMessage(Env.appName, Env.playStoreUrl);
+    final subject = l.shareAppSubject(Env.appName);
     try {
       _analyticsService.logActivity(deviceId ?? 'unknown', 'Share App Link');
       await SharePlus.instance.share(
-        ShareParams(text: message, subject: 'Check out ${Env.appName}'),
+        ShareParams(text: message, subject: subject),
       );
     } catch (e) {
       debugPrint('Share failed: $e');
       if (context.mounted) {
+        final loc = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not share: $e'),
+            content: Text(loc.shareCouldNotOpen('$e')),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -132,7 +135,7 @@ class MoreScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Your Ultimate Music Companion',
+                      l.appTagline,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
@@ -174,6 +177,24 @@ class MoreScreen extends StatelessWidget {
                   MaterialPageRoute(
                     builder: (_) => const NotificationSettingsScreen(),
                   ),
+                );
+              },
+            ),
+
+            _buildSettingsItem(
+              context,
+              icon: Icons.alarm_rounded,
+              title: l.settingWakeMeUp,
+              subtitle: l.settingWakeMeUpSubtitle,
+              iconColor: Colors.deepPurple.shade400,
+              onTap: () {
+                _analyticsService.logActivity(
+                  deviceId ?? 'unknown',
+                  'Navigate to Wake Me Up',
+                );
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const WakeMeUpScreen()),
                 );
               },
             ),
@@ -249,7 +270,10 @@ class MoreScreen extends StatelessWidget {
             // ── Footer ────────────────────────────────────────────────────
             Center(
               child: Text(
-                '© ${DateTime.now().year} ${Env.appName}. All Rights Reserved.',
+                l.copyrightFooter(
+                  '${DateTime.now().year}',
+                  Env.appName,
+                ),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(
                     context,
@@ -286,18 +310,19 @@ class MoreScreen extends StatelessWidget {
       final paywallResult = await RevenueCatUI.presentPaywall();
       await updatePremiumStatus();
       if (!context.mounted) return;
+      final loc = AppLocalizations.of(context)!;
       if (paywallResult == PaywallResult.purchased ||
           paywallResult == PaywallResult.restored) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Thank you — Premium is active.'),
+          SnackBar(
+            content: Text(loc.premiumThankYou),
             behavior: SnackBarBehavior.floating,
           ),
         );
       } else if (paywallResult == PaywallResult.notPresented) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No subscription package is currently available.'),
+          SnackBar(
+            content: Text(loc.premiumNoPackages),
             behavior: SnackBarBehavior.floating,
           ),
         );
@@ -305,9 +330,10 @@ class MoreScreen extends StatelessWidget {
     } catch (e) {
       debugPrint('Paywall error: $e');
       if (context.mounted) {
+        final loc = AppLocalizations.of(context)!;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not open subscriptions: $e'),
+            content: Text(loc.paywallCouldNotOpen('$e')),
             behavior: SnackBarBehavior.floating,
           ),
         );

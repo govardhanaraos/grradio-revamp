@@ -28,12 +28,13 @@ plugins {
 }
 
 dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
         google()
         mavenCentral()
         gradlePluginPortal()
-        // Repository for Flutter engine artifacts
+        maven { url "https://jitpack.io" }
+        // Required for io.flutter:flutter_embedding_* artifacts
         maven { url "https://storage.googleapis.com/download.flutter.io" }
     }
 }

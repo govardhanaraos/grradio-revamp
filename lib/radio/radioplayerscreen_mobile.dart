@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'dart:math' show Random;
 
 import 'package:audio_service/audio_service.dart';
@@ -958,10 +958,15 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
   }
 
   void _playSong(Song song) {
-    // For now, just show a snackbar. This can be replaced with actual audio playback.
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Playing ${song.title}')));
+    HapticFeedback.lightImpact();
+    _analyticsService.logActivity(
+      deviceId!,
+      'Play Top Song',
+      details: {'title': song.title, 'url': song.url},
+    );
+    // Pause live radio if it was playing to avoid clipping
+    globalRadioAudioHandler.stop();
+    globalMp3QueueService.playDirectUrl(song.title, song.url);
   }
   // ─────────────────────────────────────────────────────────────────────────
   //  Widget helpers

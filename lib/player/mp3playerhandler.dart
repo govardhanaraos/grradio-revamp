@@ -5,12 +5,12 @@ import 'dart:async';
 import 'package:audio_service/audio_service.dart'
     as audio_service; // Alias for clarity
 import 'package:flutter/cupertino.dart';
+import 'package:grradio/api/analytics_service_api.dart';
+import 'package:grradio/main.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:just_audio/just_audio.dart' as just_audio; // Alias for clarity
 import 'package:rxdart/rxdart.dart'; // Required for Rx.combineLatest4
-import 'package:grradio/api/analytics_service_api.dart';
-import 'package:grradio/main.dart';
 
 // Define the type for the songs coming from your search results
 typedef SongData = Map<String, dynamic>;
@@ -397,6 +397,42 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
       print('Error extracting stream URL for $fileId: $e');
     }
     return null;
+  }
+
+  Future<void> playDirectUrl(String title, String streamUrl) async {
+    await _player.stop();
+
+    if (streamUrl.isEmpty) {
+      print('❌ Could not fetch direct stream URL for $title');
+      return;
+    }
+
+    final mediaItemTag = audio_service.MediaItem(id: streamUrl, title: title);
+    final source = just_audio.AudioSource.uri(
+      Uri.parse(streamUrl),
+      tag: mediaItemTag,
+    );
+
+    try {
+      await _player.setAudioSource(source);
+      await _player.play();
+
+      // Stop automatically when finished
+      _player.processingStateStream.listen((state) async {
+        if (state == just_audio.ProcessingState.completed) {
+          await stop();
+        }
+      });
+
+      mediaItem.add(mediaItemTag);
+      _analyticsService.logActivity(
+        deviceId!,
+        'MP3 Direct URL Play',
+        details: {'trackTitle': title, 'url': streamUrl},
+      );
+    } catch (e) {
+      print('Error playing direct song: $e');
+    }
   }
 
   // In Mp3PlayerHandler

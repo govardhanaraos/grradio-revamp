@@ -462,10 +462,10 @@ class _Mp3PlayerScreenState extends State<Mp3PlayerScreen>
           if (entity is! File || !seen.add(entity.path)) continue;
           final stat = entity.statSync();
           if (stat.size == 0) continue;
+          
+          // Using Duration.zero to prevent native decoding block on load
           Duration dur = Duration.zero;
-          try {
-            dur = await player.setFilePath(entity.path) ?? Duration.zero;
-          } catch (_) {}
+          
           final fn = entity.uri.pathSegments.last;
           String title = fn.split('_').first;
           if (title.isEmpty) title = fn;

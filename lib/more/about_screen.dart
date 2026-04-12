@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:grradio/Env.dart';
+import 'package:grradio/l10n/app_localizations.dart';
 import 'package:grradio/more/privacy_policy_screen.dart';
 import 'package:grradio/more/terms_of_service_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -7,11 +8,12 @@ import 'package:url_launcher/url_launcher.dart';
 class AboutScreen extends StatelessWidget {
   const AboutScreen({Key? key}) : super(key: key);
 
-  Future<void> _launchEmail() async {
-    final Uri uri = Uri(
+  Future<void> _launchEmail(BuildContext context) async {
+    final l = AppLocalizations.of(context)!;
+    final uri = Uri(
       scheme: 'mailto',
       path: Env.supportEmail,
-      query: 'subject=GR Radio Enquiry',
+      queryParameters: {'subject': l.aboutEmailSubject(Env.appName)},
     );
     if (await canLaunchUrl(uri)) await launchUrl(uri);
   }
@@ -25,16 +27,18 @@ class AboutScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
+    final year = '${DateTime.now().year}';
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('About'),
+        title: Text(l.screenAbout),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
         child: Column(
           children: [
             const SizedBox(height: 40),
-            // App Logo
             Center(
               child: Container(
                 width: 100,
@@ -70,7 +74,7 @@ class AboutScreen extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Version ${Env.appVersion}',
+              l.aboutVersionLabel(Env.appVersion),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -78,49 +82,47 @@ class AboutScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               child: Text(
-                '${Env.appName} is your ultimate companion for high-quality audio streaming. '
-                'Enjoy local and international stations with crystal clear sound and '
-                'premium features like offline downloads and ad-free listening.',
+                l.aboutIntroBody(Env.appName),
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.5),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      height: 1.5,
+                    ),
               ),
             ),
             const Divider(),
 
-            // Tappable info tiles
             _buildInfoTile(
               context,
               icon: Icons.person_rounded,
               iconColor: const Color(0xFF7C4DFF),
-              label: 'Developer',
-              value: 'Govardhana Rao Sugrivugari',
+              label: l.aboutLabelDeveloper,
+              value: l.aboutDeveloperName,
             ),
             _buildInfoTile(
               context,
               icon: Icons.email_rounded,
               iconColor: Colors.orange.shade700,
-              label: 'Contact Us',
+              label: l.aboutLabelContact,
               value: Env.supportEmail,
-              onTap: _launchEmail,
+              onTap: () => _launchEmail(context),
             ),
             _buildInfoTile(
               context,
               icon: Icons.language_rounded,
               iconColor: Colors.teal.shade600,
-              label: 'Website',
-              value: 'www.grradio.com',
+              label: l.aboutLabelWebsite,
+              value: l.aboutWebsiteDisplay,
               onTap: _launchWebsite,
             ),
 
             const Divider(),
 
-            // Legal
             ListTile(
               leading: const Icon(
                 Icons.privacy_tip_rounded,
                 color: Color(0xFF7C4DFF),
               ),
-              title: const Text('Privacy Policy'),
+              title: Text(l.screenPrivacyPolicy),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.push(
                 context,
@@ -134,7 +136,7 @@ class AboutScreen extends StatelessWidget {
                 Icons.gavel_rounded,
                 color: Color(0xFF7C4DFF),
               ),
-              title: const Text('Terms of Service'),
+              title: Text(l.screenTermsOfService),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.push(
                 context,
@@ -148,7 +150,7 @@ class AboutScreen extends StatelessWidget {
                 Icons.article_rounded,
                 color: Color(0xFF7C4DFF),
               ),
-              title: const Text('Third-Party Licenses'),
+              title: Text(l.licensesThirdParty),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => showLicensePage(
                 context: context,
@@ -158,8 +160,10 @@ class AboutScreen extends StatelessWidget {
             ),
             const SizedBox(height: 40),
             Text(
-              '© 2025 ${Env.appName}. All Rights Reserved.',
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(color: Colors.grey[500]),
+              l.copyrightFooter(year, Env.appName),
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Colors.grey[500],
+                  ),
             ),
             const SizedBox(height: 20),
           ],

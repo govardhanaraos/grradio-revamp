@@ -68,6 +68,7 @@ dependencies {
 
     implementation "androidx.multidex:multidex:2.0.1"
     implementation "com.google.android.gms:play-services-ads:22.6.0"
+    // ffmpeg-kit-audio removed — package discontinued (archived 2025), binary no longer on Maven
 }
 
 apply plugin: 'com.google.gms.google-services'

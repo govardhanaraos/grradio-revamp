@@ -8,6 +8,7 @@ import 'package:grradio/radio/music_visualizer.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:sliding_up_panel/sliding_up_panel.dart';
 
+import '../l10n/app_localizations.dart';
 import '../main.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,7 +56,10 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
   int _recordSeconds = 0;
   Timer? _recordTimer; // counts display seconds locally
   StreamSubscription? _customEventSub; // listens to handler events
+  bool _ccEnabled = false;
 
+  String _liveTranscript = '';
+  String _finalTranscript = '';
   // ── Playback progress (local files only — music / download / recording) ────
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;
@@ -132,6 +136,10 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
       if (!mounted) return;
       final dur = (mi as MediaItem?)?.duration ?? Duration.zero;
       if (dur != _duration) setState(() => _duration = dur);
+      setState(() {
+        _liveTranscript = '';
+        _finalTranscript = '';
+      });
     });
     _positionSub = globalRadioAudioHandler.positionStream.listen((pos) {
       if (!mounted || _sliderDragging) return;
@@ -187,6 +195,20 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
             behavior: SnackBarBehavior.floating,
           ),
         );
+      } else if (type == 'transcription') {
+        if (!_ccEnabled) return; // ignore if CC is off
+        if (!mounted) return;
+        final text = (event['text'] as String? ?? '').trim();
+        final isFinal = event['isFinal'] as bool? ?? false;
+        if (text.isEmpty) return;
+        setState(() {
+          if (isFinal) {
+            _finalTranscript = text;
+            _liveTranscript = '';
+          } else {
+            _liveTranscript = text;
+          }
+        });
       }
     });
   }
@@ -366,23 +388,56 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
               ),
             ],
           ),
-          ScaleTransition(
-            scale: _shareBounce,
-            child: GestureDetector(
-              onTap: _shareStation,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF7C4DFF).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.ios_share_rounded,
-                  size: 22,
-                  color: Color(0xFF7C4DFF),
+          // Share + CC buttons
+          Row(
+            children: [
+              // CC BUTTON
+              GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  setState(() => _ccEnabled = !_ccEnabled);
+                  widget.audioHandler.customAction(
+                    _ccEnabled ? 'start_transcription' : 'stop_transcription',
+                    {},
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _ccEnabled
+                        ? const Color(0xFF7C4DFF).withOpacity(0.15)
+                        : Colors.grey.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    Icons.closed_caption_rounded,
+                    size: 22,
+                    color: _ccEnabled ? const Color(0xFF7C4DFF) : Colors.grey,
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(width: 10),
+
+              // SHARE BUTTON (existing)
+              ScaleTransition(
+                scale: _shareBounce,
+                child: GestureDetector(
+                  onTap: _shareStation,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF7C4DFF).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.ios_share_rounded,
+                      size: 22,
+                      color: Color(0xFF7C4DFF),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -426,48 +481,89 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
           )
         : const SizedBox.shrink();
 
-    final albumArt = Container(
-      width: artSize,
-      height: artSize,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF7C4DFF).withOpacity(0.28),
-            blurRadius: 40,
-            offset: const Offset(0, 14),
-          ),
-          BoxShadow(
-            color: const Color(0xFF448AFF).withOpacity(0.14),
-            blurRadius: 60,
-            offset: const Offset(0, 20),
-          ),
-        ],
-        image: widget.mediaItem?.artUri != null
-            ? DecorationImage(
-                image: NetworkImage(widget.mediaItem!.artUri.toString()),
-                fit: BoxFit.cover,
-              )
-            : null,
-        gradient: widget.mediaItem?.artUri == null
-            ? LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: isDark
-                    ? [const Color(0xFF1A0A3E), const Color(0xFF0D2040)]
-                    : [const Color(0xFFF0EEFF), const Color(0xFFE0F0FF)],
-              )
-            : null,
-      ),
-      child: widget.mediaItem?.artUri == null
-          ? Center(
-              child: Icon(
-                _isRadioStation ? Icons.radio : Icons.music_note,
-                size: artSize * 0.32,
-                color: const Color(0xFF7C4DFF).withOpacity(0.5),
+    final albumArt = Stack(
+      children: [
+        Container(
+          width: artSize,
+          height: artSize,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF7C4DFF).withOpacity(0.28),
+                blurRadius: 40,
+                offset: const Offset(0, 14),
               ),
-            )
-          : null,
+              BoxShadow(
+                color: const Color(0xFF448AFF).withOpacity(0.14),
+                blurRadius: 60,
+                offset: const Offset(0, 20),
+              ),
+            ],
+            image: widget.mediaItem?.artUri != null
+                ? DecorationImage(
+                    image: NetworkImage(widget.mediaItem!.artUri.toString()),
+                    fit: BoxFit.cover,
+                  )
+                : null,
+            gradient: widget.mediaItem?.artUri == null
+                ? LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: isDark
+                        ? [const Color(0xFF1A0A3E), const Color(0xFF0D2040)]
+                        : [const Color(0xFFF0EEFF), const Color(0xFFE0F0FF)],
+                  )
+                : null,
+          ),
+          child: widget.mediaItem?.artUri == null
+              ? Center(
+                  child: Icon(
+                    _isRadioStation ? Icons.radio : Icons.music_note,
+                    size: artSize * 0.32,
+                    color: const Color(0xFF7C4DFF).withOpacity(0.5),
+                  ),
+                )
+              : null,
+        ),
+        // ── Transcription overlay ─────────────────────────────────────
+        if (_ccEnabled &&
+            _isRadioStation &&
+            (_liveTranscript.isNotEmpty || _finalTranscript.isNotEmpty))
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(28),
+                  bottomRight: Radius.circular(28),
+                ),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.0),
+                    Colors.black.withOpacity(0.55),
+                  ],
+                ),
+              ),
+              child: Text(
+                _liveTranscript.isNotEmpty ? _liveTranscript : _finalTranscript,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  height: 1.3,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
 
     final visualizerBlock = SizedBox(
@@ -1142,6 +1238,7 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
       builder: (context) {
+        final l = AppLocalizations.of(context)!;
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
@@ -1150,7 +1247,7 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Sleep timer',
+                  l.sleepTimerSheetTitle,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 10),
@@ -1160,7 +1257,7 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
                   children: [
                     for (final mins in options)
                       ActionChip(
-                        label: Text('$mins min'),
+                        label: Text(l.sleepTimerMinutesChip(mins)),
                         onPressed: () async {
                           Navigator.of(context).pop();
                           await widget.audioHandler.setSleepTimer(
@@ -1180,7 +1277,7 @@ class _ExpandedPlayerContentState extends State<ExpandedPlayerContent>
                       _syncSleepTimerStateFromHandler();
                     },
                     icon: const Icon(Icons.close_rounded),
-                    label: const Text('Cancel sleep timer'),
+                    label: Text(l.sleepCancel),
                   ),
                 ],
               ],

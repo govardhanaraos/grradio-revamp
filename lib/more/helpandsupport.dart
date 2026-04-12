@@ -99,9 +99,10 @@ class _HelpSupportScreenState extends State<HelpSupportScreen>
 
   @override
   Widget build(BuildContext context) {
+    final l = AppLocalizations.of(context)!;
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.settingHelpSupport ?? 'Help & Support'),
+        title: Text(l.settingHelpSupport),
         centerTitle: true,
       ),
       body: ListView(
@@ -111,8 +112,8 @@ class _HelpSupportScreenState extends State<HelpSupportScreen>
           _buildItem(
             index: 0,
             icon: Icons.auto_awesome,
-            title: AppLocalizations.of(context)?.aiAssistant ?? 'AI Assistant',
-            subtitle: AppLocalizations.of(context)?.aiAssistantSubtitle ?? 'Get instant help from our AI',
+            title: l.aiAssistant,
+            subtitle: l.aiAssistantSubtitle,
             onTap: () {
               AnalyticsServiceAPI().logActivity(deviceId!, "Navigate to AI Assistant");
               Navigator.push(
@@ -124,8 +125,8 @@ class _HelpSupportScreenState extends State<HelpSupportScreen>
           _buildItem(
             index: 1,
             icon: Icons.question_answer_rounded,
-            title: 'FAQ',
-            subtitle: 'Frequently asked questions',
+            title: l.screenFaq,
+            subtitle: l.faqScreenSubtitle,
             onTap: () {
               AnalyticsServiceAPI().logActivity(deviceId!, "Navigate to FAQ");
               Navigator.push(
@@ -150,8 +151,8 @@ class _HelpSupportScreenState extends State<HelpSupportScreen>
           _buildItem(
             index: 3,
             icon: Icons.feedback_rounded,
-            title: 'Submit Feedback',
-            subtitle: 'Tell us your issue or suggestion',
+            title: l.screenFeedback,
+            subtitle: l.feedbackFormTileSubtitle,
             onTap: () {
               AnalyticsServiceAPI().logActivity(deviceId!, "Navigate to Submit Feedback");
               Navigator.push(

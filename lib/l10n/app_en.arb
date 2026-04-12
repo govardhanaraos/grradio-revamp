@@ -220,6 +220,12 @@
   "sleepIn60": "Sleep in 60 minutes",
   "sleepCancel": "Cancel sleep timer",
 
+  "sleepTimerSheetTitle": "Sleep timer",
+  "sleepTimerMinutesChip": "{minutes} min",
+  "@sleepTimerMinutesChip": {
+    "placeholders": { "minutes": { "type": "int" } }
+  },
+
   "recordingNameHint": "Recording name",
 
   "emptyNoMusicTitle": "No Music Found",
@@ -261,5 +267,231 @@
   "aiClearConfirm": "Are you sure you want to clear chat history?",
   "aiContactHuman": "Contact Human Support",
   "aiWelcome": "Hi! I'm GR Radio's AI assistant. How can I help you today?",
-  "aiError": "Failed to get response, please try again."
+  "aiError": "Failed to get response, please try again.",
+
+  "settingWakeMeUp": "Wake me up",
+  "@settingWakeMeUp": { "description": "More screen — radio alarm clock" },
+  "settingWakeMeUpSubtitle": "One-time, daily, or weekly radio alarm",
+  "@settingWakeMeUpSubtitle": {},
+
+  "wakeAlarmTitle": "Wake me up",
+  "wakeAlarmHowItWorksTitle": "How it works",
+  "wakeAlarmAndroidExplain": "Android can open GR Radio at the scheduled time and start your station, even if the app was closed. One-time alarms use the date you pick; daily and weekly alarms use the clock time (and weekdays for weekly). Allow “Alarms & reminders” (exact alarms) when asked, avoid force-stopping the app, and expect some OEMs to delay alarms if battery saving is aggressive.",
+  "wakeAlarmIosExplain": "iOS cannot start audio automatically while the app is closed. You get a notification at the chosen time — open it to play the station. Daily and weekly schedules repeat using notifications on those days. Keep notifications allowed for GR Radio.",
+  "wakeRepeatLabel": "Repeat",
+  "wakeRepeatOnce": "Once",
+  "wakeRepeatDaily": "Daily",
+  "wakeRepeatWeekly": "Weekly",
+  "wakeWeekdaysLabel": "Days",
+  "wakeAlarmDate": "Date",
+  "wakeAlarmTime": "Time",
+  "wakeAlarmTimeRepeat": "Time of day",
+  "wakeAlarmStation": "Station",
+  "wakeAlarmSelectStation": "Choose a station",
+  "wakeAlarmSave": "Save wake-up",
+  "wakeAlarmClear": "Clear wake-up",
+  "wakeAlarmScheduled": "Wake-up saved.",
+  "wakeAlarmDisabled": "Wake-up cleared.",
+  "wakeAlarmScheduleFailed": "Could not save. Check exact-alarm permission (Android) or notification permission (iOS), date/time, and weekdays for weekly.",
+  "wakeAlarmPickStation": "Choose a station first.",
+  "wakeAlarmPickFuture": "Pick a date and time at least 30 seconds from now.",
+  "wakeAlarmPickFutureRepeat": "Pick a time at least 30 seconds from now for the next alarm.",
+  "wakeAlarmNoStations": "No stations loaded yet. Open the Radio tab first, then try again.",
+
+  "noInternetStreamingTitle": "No Internet",
+  "noInternetStreamingBody": "GR Radio requires an active internet connection to stream music. Please check your settings.",
+  "buttonRetryUpper": "RETRY",
+
+  "batteryOptimizationTitle": "Keep Radio Playing",
+  "batteryOptimizationBody": "To prevent the radio from stopping when your screen is off or during phone calls, please allow the app to run in the background in the next screen.",
+  "batteryOptimizationLater": "LATER",
+  "batteryOptimizationSettings": "SETTINGS",
+
+  "recordingInProgressBadge": "RECORDING IN PROGRESS",
+
+  "sleepInHoursOnly": "Sleep in {h}h",
+  "@sleepInHoursOnly": {
+    "placeholders": { "h": { "type": "int" } }
+  },
+  "sleepInHoursMinutes": "Sleep in {h}h {m}m",
+  "@sleepInHoursMinutes": {
+    "placeholders": {
+      "h": { "type": "int" },
+      "m": { "type": "int" }
+    }
+  },
+  "sleepInMinutesOnly": "Sleep in {minutes}m",
+  "@sleepInMinutesOnly": {
+    "placeholders": { "minutes": { "type": "int" } }
+  },
+
+  "premiumThankYou": "Thank you — Premium is active.",
+  "premiumNoPackages": "No subscription package is currently available.",
+  "paywallCouldNotOpen": "Could not open subscriptions: {error}",
+  "@paywallCouldNotOpen": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "shareCouldNotOpen": "Could not share: {error}",
+  "@shareCouldNotOpen": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "ratingCouldNotOpen": "Could not open rating: {error}",
+  "@ratingCouldNotOpen": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+
+  "screenFaq": "FAQ",
+  "screenTermsOfService": "Terms of Service",
+  "screenPrivacyPolicy": "Privacy Policy",
+  "screenAbout": "About",
+  "screenNotifications": "Notifications",
+  "screenFeedback": "Feedback / Complaint",
+  "screenContactSupport": "Contact Support",
+  "buttonSendEmail": "Send Email",
+  "licensesThirdParty": "Third-Party Licenses",
+  "languageApplicationLabel": "Application language",
+  "languageListeningLabel": "Listening language",
+  "languageSlotLabel": "Language {index}",
+  "@languageSlotLabel": {
+    "placeholders": { "index": { "type": "int" } }
+  },
+
+  "premiumMembershipTitle": "Premium Membership",
+  "premiumManageDevices": "Manage Linked Devices",
+  "premiumActivateNowUpper": "ACTIVATE NOW",
+  "premiumActivationSuccess": "Activation Successful!",
+  "premiumActivateError": "Error: {error}",
+  "@premiumActivateError": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "premiumDeactivatedDevice": "Premium deactivated for this device.",
+  "premiumUnlinkFailed": "Failed to unlink: {error}",
+  "@premiumUnlinkFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "activateRadioProTitle": "Activate Radio Pro",
+  "premiumActivatedAdsRemoved": "Premium Activated! Ads Removed.",
+  "buttonActivateNow": "Activate Now",
+
+  "miniPlayerHideTooltip": "Hide mini player",
+
+  "radioStreamSubtitleDefault": "Radio Stream",
+
+  "shareAppMessage": "Hey! Check out {appName} for high-quality radio streaming and premium features. Download it here: {url}",
+  "@shareAppMessage": {
+    "placeholders": {
+      "appName": { "type": "String" },
+      "url": { "type": "String" }
+    }
+  },
+  "shareAppSubject": "Check out {appName}",
+  "@shareAppSubject": {
+    "placeholders": { "appName": { "type": "String" } }
+  },
+  "copyrightFooter": "© {year} {appName}. All rights reserved.",
+  "@copyrightFooter": {
+    "placeholders": {
+      "year": { "type": "String" },
+      "appName": { "type": "String" }
+    }
+  },
+
+  "faq1Question": "How do I find and play a station?",
+  "faq1Answer": "Open the Radio tab, browse or search the station list, and tap a station to start playback. Use the search field and language filters where available to narrow results.",
+  "faq2Question": "Why does playback buffer, pause, or stop?",
+  "faq2Answer": "Live streaming needs a stable internet connection. Try Wi‑Fi or a stronger signal. On Android, battery optimisation can stop background audio—when prompted, allow the app to run in the background so playback can continue with the screen off.",
+  "faq3Question": "How does Premium work?",
+  "faq3Answer": "Open More → Go Premium to see subscription options processed by Google Play or Apple. Premium may remove ads and unlock extras shown at purchase time. You can restore purchases on a new device when signed in with the same store account. Some flows may also use licence keys or linked devices where offered in the app.",
+  "faq4Question": "Can I listen without the internet?",
+  "faq4Answer": "Live radio streams need an active connection. Items in the Downloads area may play offline depending on how they were obtained and any licensing limits.",
+  "faq5Question": "How do recordings work?",
+  "faq5Answer": "Where recording is available for a live stream, audio is saved to your device storage. Use recordings only for personal, lawful purposes and respect broadcaster and copyright rules in your country.",
+  "faq6Question": "What are the sleep timer and Wake me up?",
+  "faq6Answer": "The sleep timer stops playback after a delay you choose. Wake me up schedules a station to start at a set time where supported; on Android this may require notification or exact-alarm permission.",
+  "faq7Question": "How do I favourite a station?",
+  "faq7Answer": "Tap the heart icon on a station in the list or player. Your favourites appear in a dedicated section on the Radio screen for quick access.",
+  "faq8Question": "How do I get help or report a problem?",
+  "faq8Answer": "Go to More → Help & Support to send feedback or find contact options. You can also email us from the About screen.",
+
+  "terms1Title": "Acceptance of terms",
+  "terms1Body": "By downloading or using {appName}, you agree to these Terms of Service. If you do not agree, do not use the app.",
+  "@terms1Body": {
+    "placeholders": { "appName": { "type": "String" } }
+  },
+  "terms2Title": "The service",
+  "terms2Body": "{appName} lets you stream live radio stations, access downloadable audio offered through the app, record streams where the feature is available, use playback tools such as a sleep timer, and receive optional notifications and scheduled playback (including alarms on supported devices). Features may vary by platform or version. We may change, suspend, or discontinue any part of the service where reasonably necessary.",
+  "@terms2Body": {
+    "placeholders": { "appName": { "type": "String" } }
+  },
+  "terms3Title": "Premium, purchases, and licences",
+  "terms3Body": "Subscriptions or one-time purchases may be processed by third parties including your app store and services such as RevenueCat. Some flows may use a licence key or device linking; where that applies, limits (for example the number of linked devices) are shown in the app. Pricing, renewal, cancellation, and refunds follow the store or provider rules. You are responsible for applicable taxes and charges.",
+  "terms4Title": "Acceptable use",
+  "terms4Body": "You use {appName} only for lawful, personal listening unless otherwise allowed. You must not misuse the app, bypass payment or entitlement checks, attack or overload our or others’ systems, or redistribute streams, downloads, or recordings in a way that infringes copyright or broadcaster terms. You are responsible for mobile data costs and for complying with local laws.",
+  "@terms4Body": {
+    "placeholders": { "appName": { "type": "String" } }
+  },
+  "terms5Title": "Third-party stations and content",
+  "terms5Body": "Streams, artwork, track metadata, and downloadable content come from third parties. {appName} does not own or control that material. Availability and quality depend on those sources and your connection. We do not guarantee any station or track will always be available.",
+  "@terms5Body": {
+    "placeholders": { "appName": { "type": "String" } }
+  },
+  "terms6Title": "Disclaimers and liability",
+  "terms6Body": "The service is provided as-is without warranties to the fullest extent permitted by law. We are not liable for indirect damages, data charges, outages, lost recordings, or alarm failures. Some regions do not allow certain exclusions; in those cases our liability is limited as the law allows.",
+  "terms7Title": "Changes and contact",
+  "terms7Body": "We may update these terms; continued use after the update means you accept the revised terms. For questions, contact us at {supportEmail}.",
+  "@terms7Body": {
+    "placeholders": { "supportEmail": { "type": "String" } }
+  },
+
+  "privacy1Title": "Introduction",
+  "privacy1Body": "This Privacy Policy explains how {appName} handles information when you use our mobile app. Read it together with our Terms of Service.",
+  "@privacy1Body": {
+    "placeholders": { "appName": { "type": "String" } }
+  },
+  "privacy2Title": "Information we collect",
+  "privacy2Body": "• Device and app identifiers may be sent to our backend for configuration, operational logs, fraud prevention, and to support premium or device limits.\n• We may log general usage (for example screens or actions) to improve the product.\n• Purchases: payment is handled by the app store; subscription state may be processed by providers such as RevenueCat—we do not receive your full card number.\n• Ads: when enabled, Google Mobile Ads (AdMob) may use advertising identifiers under Google’s policies.\n• Notifications: if you opt in, Firebase Cloud Messaging may use a push token to deliver messages.\n• Content you create (recordings, downloads) is stored on your device unless you export or share it yourself.",
+  "privacy3Title": "How we use information",
+  "privacy3Body": "We use this data to run and improve {appName}, deliver premium entitlements, show ads when they are on, send notifications you request, protect the service, and meet legal obligations. We do not sell your personal information for money.",
+  "@privacy3Body": {
+    "placeholders": { "appName": { "type": "String" } }
+  },
+  "privacy4Title": "Permissions",
+  "privacy4Body": "The app may ask for internet access, storage or media access (for downloads and recordings), notifications, exact alarms on some Android versions for scheduled playback, and microphone access only if you use speech-related features. You can change many permissions in system settings; denying some may limit features.",
+  "privacy5Title": "Third-party services",
+  "privacy5Body": "We use providers such as Google (including FCM and AdMob where applicable), Apple platform services on iOS, RevenueCat for purchases, and our own backend API. Their practices are described in their policies. Radio streams and downloadable media come from third-party sources outside our control.",
+  "privacy6Title": "Retention and security",
+  "privacy6Body": "We keep server logs only as long as needed for the purposes above and reasonable security. No method of transmission or storage is completely secure; we use safeguards appropriate to the data we handle.",
+  "privacy7Title": "Children’s privacy",
+  "privacy7Body": "{appName} is not aimed at children under the age required in your country for consent without a parent. We do not knowingly collect personal data from young children. Contact us if you believe we have, and we will delete it where the law requires.",
+  "@privacy7Body": {
+    "placeholders": { "appName": { "type": "String" } }
+  },
+  "privacy8Title": "Contact",
+  "privacy8Body": "Questions about this policy or your data: email {supportEmail}. We may update this policy from time to time; the date below shows the latest revision.",
+  "@privacy8Body": {
+    "placeholders": { "supportEmail": { "type": "String" } }
+  },
+  "privacyLastUpdatedFooter": "Last updated: April 2026",
+
+  "aboutIntroBody": "{appName} helps you discover live radio, keep favourites, use downloads where available, and tools like a sleep timer and optional wake-up playback. Premium can reduce ads and add features described at purchase. Thanks for listening!",
+  "@aboutIntroBody": {
+    "placeholders": { "appName": { "type": "String" } }
+  },
+  "aboutVersionLabel": "Version {version}",
+  "@aboutVersionLabel": {
+    "placeholders": { "version": { "type": "String" } }
+  },
+  "aboutLabelDeveloper": "Developer",
+  "aboutDeveloperName": "Govardhana Rao Sugrivugari",
+  "aboutLabelContact": "Contact",
+  "aboutLabelWebsite": "Website",
+  "aboutWebsiteDisplay": "www.grradio.com",
+  "aboutEmailSubject": "{appName} — support enquiry",
+  "@aboutEmailSubject": {
+    "placeholders": { "appName": { "type": "String" } }
+  },
+
+  "faqScreenSubtitle": "Answers about stations, Premium, recordings, alarms, and more",
+  "contactSupportTileSubtitle": "Reach our support team by email or form",
+  "feedbackFormTileSubtitle": "Report an issue or share a suggestion"
 }
