@@ -45,7 +45,11 @@ class _WakeMeUpScreenState extends State<WakeMeUpScreen> {
       if (snap != null) {
         _whenLocal = snap.whenLocal;
         _repeat = snap.repeat;
-        _weekdays = snap.repeat == WakeAlarmRepeat.weekly
+        // FIX #6: Always restore weekdays from the snapshot regardless of
+        // repeat mode so user selections survive a screen re-open. Previously
+        // weekdays were reset to {now.weekday} for non-weekly repeat modes,
+        // which discarded persisted values on every hydrate cycle.
+        _weekdays = snap.weekdays.isNotEmpty
             ? Set<int>.from(snap.weekdays)
             : {now.weekday};
         RadioStation? found;

@@ -6,33 +6,29 @@ import 'package:http/http.dart' as http;
 
 class TopSongsService {
   Future<List<Song>> fetchTopSongs(String languageCode) async {
-    final uri = Uri.parse('${Env.apiBaseUrl}/api/v1/ai/top-songs?language=$languageCode');
+    // Ensure lowercase for API consistency
+    final lang = languageCode.toLowerCase();
+    final uri = Uri.parse(
+      '${Env.apiBaseUrl}/api/v1/ai/top-songs?language=$lang',
+    );
 
     try {
       final response = await _getWithRetry(uri);
       if (response.statusCode == 200) {
-        final decoded = json.decode(utf8.decode(response.bodyBytes));
-        
-        List<dynamic> songsList = [];
-        if (decoded is List) {
-          songsList = decoded;
-        } else if (decoded is Map<String, dynamic> && decoded['songs'] != null) {
-          songsList = decoded['songs'] as List;
-        }
-        
-        final songs = songsList
-            .map((songJson) => Song.fromJson(songJson as Map<String, dynamic>))
-            .toList();
-        return songs;
-      } else {
-        print(
-          'API returned status ${response.statusCode}. Falling back to mock data.',
+        final List<dynamic> decoded = json.decode(
+          utf8.decode(response.bodyBytes),
         );
-        return _getMockSongs();
+
+        return decoded
+            .map((json) => Song.fromJson(json as Map<String, dynamic>))
+            .toList();
+      } else {
+        print('API Error: ${response.statusCode}. Returning empty list.');
+        return []; // Return empty list to hide the section
       }
     } catch (e) {
-      print('Failed to fetch top songs: $e. Falling back to mock data.');
-      return _getMockSongs();
+      print('Fetch failed: $e. Returning empty list.');
+      return []; // Return empty list to hide the section
     }
   }
 

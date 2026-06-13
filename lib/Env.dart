@@ -1,14 +1,14 @@
 class Env {
   //static late String apiBaseUrl = 'https://radio-backend-nysq.onrender.com';
-  static String apiBaseUrl =
-      'https://radio-backend-customer-care-radio.onrender.com';
+  static String apiBaseUrl = 'https://radio-backend-5xfr.onrender.com';
+  //static const String environment = "production";
   static const String environment = "production";
   static const int connectTimeoutMs = 60000;
   static const int receiveTimeoutMs = 60000;
 
   // ── App identity ────────────────────────────────────────────────────────────
   // TODO: Update packageName once the app is published on the Play Store.
-  static const String packageName = 'com.grradio.app';
+  static const String packageName = 'com.radio.grradio';
   static const String playStoreUrl =
       'https://play.google.com/store/apps/details?id=$packageName';
   static const String appVersion = '1.0.0';
@@ -23,8 +23,8 @@ class Env {
   //sk_CPpSAxwIVwwXPBizbMGkpdAMBJaan
   //test_EWJndZnjbUWEyVNJYEKSuRLKyBS
   static const String revenueCatAndroidPublicSdkKey =
-      'sk_CPpSAxwIVwwXPBizbMGkpdAMBJaan';
+      'test_EWJndZnjbUWEyVNJYEKSuRLKyBS';
   static const String revenueCatIosPublicSdkKey =
-      'sk_CPpSAxwIVwwXPBizbMGkpdAMBJaan';
+      'test_EWJndZnjbUWEyVNJYEKSuRLKyBS';
   static const String revenueCatEntitlementId = 'GR Radio Pro';
 }

@@ -127,7 +127,7 @@ abstract class AppLocalizations {
   /// Bottom nav tab label
   ///
   /// In en, this message translates to:
-  /// **'Downloads'**
+  /// **'World Radio'**
   String get tabDownloads;
 
   /// Bottom nav tab label

@@ -4,14 +4,13 @@ import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:grradio/more/wake_alarm_callback.dart'; // FIX #1: import top-level alarm functions
+import 'package:grradio/more/wake_alarm_prefs.dart';
+import 'package:grradio/more/wake_alarm_repeat.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
-
-import 'wake_alarm_callback.dart';
-import 'wake_alarm_prefs.dart';
-import 'wake_alarm_repeat.dart';
 
 class WakeAlarmSnapshot {
   WakeAlarmSnapshot({
@@ -68,8 +67,10 @@ class WakeAlarmService {
     if (_tzReady) return;
     try {
       tzdata.initializeTimeZones();
-      final info = await FlutterTimezone.getLocalTimezone();
-      tz.setLocalLocation(tz.getLocation(info.identifier));
+      final tzName = await FlutterTimezone.getLocalTimezone();
+      // FlutterTimezone returns a plain String in recent versions.
+      // Use it directly; if it ever returns an object with .identifier, cast accordingly.
+      tz.setLocalLocation(tz.getLocation(tzName.identifier));
       _tzReady = true;
     } catch (e) {
       debugPrint('WakeAlarmService timezone init: $e');
@@ -169,7 +170,7 @@ class WakeAlarmService {
       await AndroidAlarmManager.oneShotAt(
         when,
         WakeAlarmPrefs.androidAlarmId,
-        wakeRadioAlarmCallback,
+        wakeRadioAlarmCallback, // now resolvable via import
         exact: true,
         wakeup: true,
         allowWhileIdle: true,
@@ -180,7 +181,7 @@ class WakeAlarmService {
     }
 
     if (repeat != WakeAlarmRepeat.once) {
-      await armNextAndroidAlarmFromPrefs();
+      await armNextAndroidAlarmFromPrefs(); // now resolvable via import
     }
   }
 
@@ -202,9 +203,7 @@ class WakeAlarmService {
 
     var when = DateTime.fromMillisecondsSinceEpoch(ms);
     final repeat = WakeAlarmRepeatHelper.fromPrefs(prefs);
-    final weekdays = repeat == WakeAlarmRepeat.weekly
-        ? WakeAlarmRepeatHelper.weekdaysFromPrefs(prefs)
-        : <int>{};
+    final weekdays = WakeAlarmRepeatHelper.weekdaysFromPrefs(prefs);
 
     if (!when.isAfter(DateTime.now())) {
       if (repeat == WakeAlarmRepeat.once) {
@@ -220,7 +219,10 @@ class WakeAlarmService {
         weekdays: weekdays,
         from: DateTime.now(),
       );
-      await prefs.setInt(WakeAlarmPrefs.scheduledMillis, when.millisecondsSinceEpoch);
+      await prefs.setInt(
+        WakeAlarmPrefs.scheduledMillis,
+        when.millisecondsSinceEpoch,
+      );
     }
 
     final sid = prefs.getString(WakeAlarmPrefs.stationId) ?? '';
@@ -294,6 +296,7 @@ class WakeAlarmService {
     );
     await prefs.setBool(WakeAlarmPrefs.enabled, true);
 
+    // ── Android ──────────────────────────────────────────────────────────────
     if (Platform.isAndroid) {
       var exact = await Permission.scheduleExactAlarm.status;
       if (!exact.isGranted) {
@@ -307,7 +310,7 @@ class WakeAlarmService {
       final ok = await AndroidAlarmManager.oneShotAt(
         firstFire,
         WakeAlarmPrefs.androidAlarmId,
-        wakeRadioAlarmCallback,
+        wakeRadioAlarmCallback, // now resolvable via import
         exact: true,
         wakeup: true,
         allowWhileIdle: true,
@@ -321,17 +324,38 @@ class WakeAlarmService {
       return true;
     }
 
+    // ── iOS ───────────────────────────────────────────────────────────────────
     if (Platform.isIOS) {
       await _ensureTz();
-      final ios = _notif.resolvePlatformSpecificImplementation<
-          IOSFlutterLocalNotificationsPlugin>();
+
+      // FIX #2: flutter_local_notifications ^18 uses IOSFlutterLocalNotificationsPlugin,
+      // not DarwinFlutterLocalNotificationsPlugin (that name was only adopted in v19+).
+      final ios = _notif
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >();
       final allowed =
-          await ios?.requestPermissions(alert: true, badge: true, sound: true) ??
+          await ios?.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          ) ??
           false;
       if (!allowed) {
         await _rollbackNewSchedule(prefs);
         return false;
       }
+
+      // FIX #3: flutter_local_notifications ^18 zonedSchedule still requires
+      // uiLocalNotificationDateInterpretation on iOS. androidScheduleMode
+      // alone is not enough — both parameters are mandatory in this version.
+      const iosDetails = NotificationDetails(
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      );
 
       switch (repeat) {
         case WakeAlarmRepeat.once:
@@ -348,18 +372,13 @@ class WakeAlarmService {
             'Wake-up radio',
             'Tap to play $stationName',
             scheduled,
-            const NotificationDetails(
-              iOS: DarwinNotificationDetails(
-                presentAlert: true,
-                presentBadge: true,
-                presentSound: true,
-              ),
-            ),
-            uiLocalNotificationDateInterpretation:
-                UILocalNotificationDateInterpretation.wallClockTime,
+            iosDetails,
             androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
             payload: 'wake_radio',
           );
+
         case WakeAlarmRepeat.daily:
           final scheduled = tz.TZDateTime(
             tz.local,
@@ -374,19 +393,14 @@ class WakeAlarmService {
             'Wake-up radio',
             'Tap to play $stationName',
             scheduled,
-            const NotificationDetails(
-              iOS: DarwinNotificationDetails(
-                presentAlert: true,
-                presentBadge: true,
-                presentSound: true,
-              ),
-            ),
-            uiLocalNotificationDateInterpretation:
-                UILocalNotificationDateInterpretation.wallClockTime,
+            iosDetails,
             androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-            payload: 'wake_radio',
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
             matchDateTimeComponents: DateTimeComponents.time,
+            payload: 'wake_radio',
           );
+
         case WakeAlarmRepeat.weekly:
           for (final w in (days.toList()..sort())) {
             final next = _nextTzOnWeekday(
@@ -400,18 +414,12 @@ class WakeAlarmService {
               'Wake-up radio',
               'Tap to play $stationName',
               next,
-              const NotificationDetails(
-                iOS: DarwinNotificationDetails(
-                  presentAlert: true,
-                  presentBadge: true,
-                  presentSound: true,
-                ),
-              ),
-              uiLocalNotificationDateInterpretation:
-                  UILocalNotificationDateInterpretation.wallClockTime,
+              iosDetails,
               androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-              payload: 'wake_radio',
+              uiLocalNotificationDateInterpretation:
+                  UILocalNotificationDateInterpretation.absoluteTime,
               matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
+              payload: 'wake_radio',
             );
           }
       }
@@ -431,22 +439,25 @@ class WakeAlarmService {
     const minLead = Duration(seconds: 35);
     final threshold = from.add(minLead);
     for (var i = 0; i <= 7; i++) {
-      final d = DateTime(from.year, from.month, from.day, hour, minute)
-          .add(Duration(days: i));
+      final d = DateTime(
+        from.year,
+        from.month,
+        from.day,
+        hour,
+        minute,
+      ).add(Duration(days: i));
       if (!d.isAfter(threshold)) continue;
       if (d.weekday == weekday) {
-        return tz.TZDateTime(
-          tz.local,
-          d.year,
-          d.month,
-          d.day,
-          hour,
-          minute,
-        );
+        return tz.TZDateTime(tz.local, d.year, d.month, d.day, hour, minute);
       }
     }
-    final d = DateTime(from.year, from.month, from.day, hour, minute)
-        .add(const Duration(days: 7));
+    final d = DateTime(
+      from.year,
+      from.month,
+      from.day,
+      hour,
+      minute,
+    ).add(const Duration(days: 7));
     return tz.TZDateTime(tz.local, d.year, d.month, d.day, hour, minute);
   }
 

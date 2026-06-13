@@ -399,7 +399,11 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
     return null;
   }
 
-  Future<void> playDirectUrl(String title, String streamUrl) async {
+  Future<void> playDirectUrl(
+    String title,
+    String streamUrl, {
+    Map<String, String>? headers,
+  }) async {
     await _player.stop();
 
     if (streamUrl.isEmpty) {
@@ -411,6 +415,7 @@ class Mp3PlayerHandler extends audio_service.BaseAudioHandler
     final source = just_audio.AudioSource.uri(
       Uri.parse(streamUrl),
       tag: mediaItemTag,
+      headers: headers,
     );
 
     try {

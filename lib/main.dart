@@ -24,9 +24,8 @@ import 'package:grradio/l10n/app_localizations.dart';
 import 'package:grradio/more/locale_provider.dart';
 import 'package:grradio/more/more.dart';
 import 'package:grradio/more/notificationservice.dart';
-import 'package:grradio/more/wake_alarm_service.dart';
 import 'package:grradio/more/theme_provider.dart';
-import 'package:grradio/mp3download/mp3downloadscreen.dart';
+import 'package:grradio/radio/world_radio_screen.dart';
 import 'package:grradio/player/mp3playerhandler.dart';
 import 'package:grradio/player/mp3playerscreen.dart';
 import 'package:grradio/radio/radio_handler_mobile.dart';
@@ -174,7 +173,8 @@ Future<String> _getDeviceId() async {
     values[6] = (values[6] & 0x0f) | 0x40;
     values[8] = (values[8] & 0x3f) | 0x80;
     final hex = values.map((b) => b.toRadixString(16).padLeft(2, '0')).toList();
-    final uuid = '${hex.sublist(0, 4).join('')}-${hex.sublist(4, 6).join('')}-${hex.sublist(6, 8).join('')}-${hex.sublist(8, 10).join('')}-${hex.sublist(10).join('')}';
+    final uuid =
+        '${hex.sublist(0, 4).join('')}-${hex.sublist(4, 6).join('')}-${hex.sublist(6, 8).join('')}-${hex.sublist(8, 10).join('')}-${hex.sublist(10).join('')}';
     return "android_$uuid";
   } else if (Platform.isIOS) {
     final iosInfo = await deviceInfo.iosInfo;
@@ -471,7 +471,7 @@ void main() async {
   HttpOverrides.global = MyHttpOverrides();
 
   WidgetsFlutterBinding.ensureInitialized();
-  await WakeAlarmService.initialize();
+  // await WakeAlarmService.initialize();
   await SystemChrome.setPreferredOrientations(const [
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
@@ -484,10 +484,10 @@ void main() async {
   await initializeApp();
   await _initAudioHandlers();
 
-  await WakeAlarmService.consumePendingWakeAndPlay(
+  /*  await WakeAlarmService.consumePendingWakeAndPlay(
     play: (id) => globalRadioAudioHandler.playFromMediaId(id),
   );
-  await WakeAlarmService.repairAndroidAlarmIfNeeded();
+  await WakeAlarmService.repairAndroidAlarmIfNeeded();*/
 
   adConfigProvider = AdConfigProvider(_analyticsService);
   await adConfigProvider.hydrateFromCache(isPremiumUser: isPremiumUser.value);
@@ -533,7 +533,7 @@ Future<void> _completeDeferredStartup() async {
     // RevenueCat first so [isPremiumUser] matches entitlements before we load
     // ad config (premium must hide ads even when /analytics/config/global is on).
     try {
-      await Purchases.setLogLevel(LogLevel.debug);
+      await Purchases.setLogLevel(LogLevel.info);
       await initializeRevenueCat();
       await updatePremiumStatus();
     } catch (e) {
@@ -729,7 +729,9 @@ class _MainNavigatorState extends State<MainNavigator> {
       builder: (dialogContext) {
         final l = AppLocalizations.of(dialogContext)!;
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
           title: Row(
             children: [
               const Icon(Icons.signal_wifi_off, color: Colors.red),
@@ -923,7 +925,9 @@ class _MainNavigatorState extends State<MainNavigator> {
                         key: ValueKey(_mp3SubTabIndex),
                         initialTabIndex: _mp3SubTabIndex,
                       ),
-                      Mp3DownloadScreen(),
+                      WorldRadioScreen(
+                        onNavigateToPlayer: _openPlayerTabFromRadio,
+                      ),
                       MoreScreen(),
                     ],
                   ),
@@ -974,8 +978,9 @@ class _MainNavigatorState extends State<MainNavigator> {
                                 _PulsingDot(),
                                 const SizedBox(width: 8),
                                 Text(
-                                  AppLocalizations.of(context)!
-                                      .recordingInProgressBadge,
+                                  AppLocalizations.of(
+                                    context,
+                                  )!.recordingInProgressBadge,
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 11,
@@ -1172,7 +1177,7 @@ class _MainNavigatorState extends State<MainNavigator> {
                           sleepLbl.isNotEmpty
                               ? sleepLbl
                               : (mediaItem.artist ??
-                                  l.radioStreamSubtitleDefault),
+                                    l.radioStreamSubtitleDefault),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -1307,7 +1312,12 @@ class _MainNavigatorState extends State<MainNavigator> {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: () {
               final l = AppLocalizations.of(context)!;
-              final labels = [l.tabRadio, l.tabPlayer, l.tabDownloads, l.tabMore];
+              final labels = [
+                l.tabRadio,
+                l.tabPlayer,
+                l.tabDownloads,
+                l.tabMore,
+              ];
               final icons = [
                 Icons.radio,
                 Icons.music_note,

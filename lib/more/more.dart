@@ -9,7 +9,6 @@ import 'package:grradio/more/language_selection_screen.dart';
 import 'package:grradio/more/locale_provider.dart';
 import 'package:grradio/more/notification_settings_screen.dart';
 import 'package:grradio/more/theme_provider.dart';
-import 'package:grradio/more/wake_me_up_screen.dart';
 import 'package:in_app_review/in_app_review.dart';
 import 'package:provider/provider.dart';
 import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
@@ -180,7 +179,7 @@ class MoreScreen extends StatelessWidget {
                 );
               },
             ),
-
+            /*
             _buildSettingsItem(
               context,
               icon: Icons.alarm_rounded,
@@ -197,7 +196,7 @@ class MoreScreen extends StatelessWidget {
                   MaterialPageRoute(builder: (_) => const WakeMeUpScreen()),
                 );
               },
-            ),
+            ),*/
 
             // Dark mode tile
             _buildDarkModeTile(context, isDark, l),
@@ -270,10 +269,7 @@ class MoreScreen extends StatelessWidget {
             // ── Footer ────────────────────────────────────────────────────
             Center(
               child: Text(
-                l.copyrightFooter(
-                  '${DateTime.now().year}',
-                  Env.appName,
-                ),
+                l.copyrightFooter('${DateTime.now().year}', Env.appName),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(
                     context,

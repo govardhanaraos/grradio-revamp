@@ -523,6 +523,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
 
   void _playStation(RadioStation station, {bool rememberRecent = true}) {
     HapticFeedback.lightImpact();
+    pauseMp3IfPlaying();
     _analyticsService.logActivity(
       deviceId!,
       'Play Station',
@@ -962,11 +963,25 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
     _analyticsService.logActivity(
       deviceId!,
       'Play Top Song',
-      details: {'title': song.title, 'url': song.url},
+      details: {
+        'title': song.title,
+        'url': song.url,
+        'album_name': song.albumName,
+        'auth_token': song.authToken,
+      },
     );
+
     // Pause live radio if it was playing to avoid clipping
     globalRadioAudioHandler.stop();
-    globalMp3QueueService.playDirectUrl(song.title, song.url);
+
+    // Prepare the OpenStack Swift authentication header
+    final Map<String, String>? headers =
+        (song.authToken != null && song.authToken!.isNotEmpty)
+        ? {'X-Auth-Token': song.authToken!}
+        : null;
+
+    // Pass the headers to your queue service
+    globalMp3QueueService.playDirectUrl(song.title, song.url, headers: headers);
   }
   // ─────────────────────────────────────────────────────────────────────────
   //  Widget helpers
@@ -997,6 +1012,7 @@ class _RadioPlayerScreenState extends State<RadioPlayerScreen>
                   _selectedLanguage = lang;
                   _cachedFilteredItems = null;
                 });
+                _fetchTopSongs();
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),

@@ -18,7 +18,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get tabPlayer => 'Player';
 
   @override
-  String get tabDownloads => 'Downloads';
+  String get tabDownloads => 'World Radio';
 
   @override
   String get tabMore => 'More';

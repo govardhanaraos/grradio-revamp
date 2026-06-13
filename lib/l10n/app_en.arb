@@ -10,7 +10,7 @@
   "tabPlayer": "Player",
   "@tabPlayer": { "description": "Bottom nav tab label" },
 
-  "tabDownloads": "Downloads",
+  "tabDownloads": "World Radio",
   "@tabDownloads": { "description": "Bottom nav tab label" },
 
   "tabMore": "More",
